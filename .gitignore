@@ -111,8 +111,11 @@ _tmp_*
 *.db
 *.sqlite
 *.sqlite3
+*.sqlite-wal
+*.sqlite-shm
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
 
-# Manus version f
+# Manus version file (auto-generated, not part of source)
+client/pu
