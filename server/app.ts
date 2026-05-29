@@ -1,7 +1,7 @@
 import "express-async-errors";
 import express from "express";
 import { getDb, getClient, ensureReady } from "./db/index.js";
-import { requireAuth } from "./auth.js";
+import { requireAuth, requirePerfil } from "./auth.js";
 import authRoutes from "./routes/auth.js";
 import pedidos from "./routes/pedidos.js";
 import bipagem from "./routes/bipagem.js";
@@ -67,6 +67,15 @@ export function createApiApp() {
       mensagem: "Todos os pedidos voltaram para 'Liberado para Separacao' e telas operacionais zeradas.",
       contagens: cnt,
     });
+  });
+
+  // POST /api/_reseed — restaura o baseline de fabrica (admin). Recria catalogo + pedidos.
+  app.post("/api/_reseed", requirePerfil("ADMINISTRADOR"), async (_req, res) => {
+    const { seed } = await import("./db/seed.js");
+    const { ensureAdmin } = await import("./db/index.js");
+    await seed({ reset: true });
+    await ensureAdmin();
+    res.json({ ok: true, mensagem: "Banco restaurado ao baseline de fábrica." });
   });
 
   app.get("/api/_debug", async (_req, res) => {
