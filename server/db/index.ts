@@ -42,3 +42,19 @@ export function resetDb(): void {
     _db.close();
     _db = null;
   }
+  if (fs.existsSync(DB_PATH)) {
+    fs.unlinkSync(DB_PATH);
+  }
+  // Remove arquivos WAL/SHM
+  for (const suffix of ["-wal", "-shm"]) {
+    const p = DB_PATH + suffix;
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  }
+}
+
+export function closeDb(): void {
+  if (_db) {
+    _db.close();
+    _db = null;
+  }
+}

@@ -36,3 +36,4 @@ export function useMutation<TBody = any, TResp = any>(
   );
 
   return { mutate, loading, error };
+}

@@ -25,3 +25,4 @@ export function useFetch<T>(url: string, params?: Record<string, any>) {
   }, [fetcher]);
 
   return { data, loading, error, refetch: fetcher };
+}

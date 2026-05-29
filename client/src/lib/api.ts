@@ -148,4 +148,14 @@ export type PreFaturamento = {
     fluxoDistinto: number;
     pendenciasImpeditivas: number;
   };
-  itensConf
+  itensConformes: { codigo: string; descricao: string; qtd: number; lote: string; validade: string }[];
+  itensSubstituidos: {
+    codOriginal: string; descOriginal: string;
+    codSubstituto: string; descSubstituto: string;
+    qtdOriginal: number; qtdSubstituta: number;
+    tipo: string; aprovadoPor: string;
+  }[];
+  itensFalta: { codigo: string; descricao: string; qtdPedida: number; qtdFaltante: number; acao: string; previsao: string }[];
+  itensFluxoDistinto: { codNF: string; descNF: string; codFisico: string; descFisico: string; aprovadoPor: string; justificativa: string }[];
+  pendencias: { tipo: string; descricao: string; impeditiva: boolean }[];
+};
