@@ -1,0 +1,238 @@
+import { Router } from "express";
+import { getDb } from "../db/index.js";
+
+const router = Router();
+
+/**
+ * GET /api/fluxo-distinto/summary
+ */
+router.get("/summary", async (_req, res) => {
+  try {
+    const db = getDb();
+    const r = await db.prepare(`
+      SELECT
+        SUM(CASE WHEN STATUS = 'PENDENTE' THEN 1 ELSE 0 END) AS aguardando,
+        SUM(CASE WHEN STATUS = 'APROVADO' AND date(DTAPROV) = date('now','localtime') THEN 1 ELSE 0 END) AS aprovadosHoje,
+        SUM(CASE WHEN STATUS = 'APROVADO' THEN 1 ELSE 0 END) AS aprovadosTotal,
+        SUM(CASE WHEN STATUS = 'REJEITADO' THEN 1 ELSE 0 END) AS rejeitados,
+        COUNT(*) AS total
+      FROM AD_FLUXODISTINTO
+    `).get();
+    res.json(r);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * GET /api/fluxo-distinto
+ */
+router.get("/", async (req, res) => {
+  try {
+    const db = getDb();
+    const { status, q } = req.query;
+    const wheres: string[] = ["1=1"];
+    const params: any[] = [];
+    if (status && status !== "todos") {
+      wheres.push("LOWER(F.STATUS) = ?");
+      params.push(String(status).toLowerCase());
+    }
+    if (q) {
+      wheres.push("(CAB.NUNNOTA LIKE ? OR PAR.NOMEPARC LIKE ?)");
+      params.push(`%${q}%`, `%${q}%`);
+    }
+    const rows = await db.prepare(`
+      SELECT
+        F.NUFLUXODIST AS id,
+        CAB.NUNNOTA AS pedido,
+        PAR.NOMEPARC AS cliente,
+        PN.DESCRPROD AS itemPedidoNF,
+        ('PRD-' || printf('%06d', PN.CODPROD)) AS codPedidoNF,
+        PF.DESCRPROD AS itemFisico,
+        ('PRD-' || printf('%06d', PF.CODPROD)) AS codFisico,
+        F.TIPO AS tipo,
+        F.JUSTIFICATIVA AS justificativa,
+        F.IMPACTO AS impacto,
+        LOWER(F.STATUS) AS status,
+        (SOL.NOMEUSU || ' (' || SOL.PERFIL || ')') AS solicitante,
+        APR.NOMEUSU AS aprovador,
+        F.DTSOLICIT AS dataSolicitacao,
+        F.DTAPROV AS dataAprovacao
+      FROM AD_FLUXODISTINTO F
+      JOIN TGFCAB CAB ON F.NUNOTA = CAB.NUNOTA
+      JOIN TGFPAR PAR ON CAB.CODPARC = PAR.CODPARC
+      JOIN TGFPRO PN  ON F.CODPRODNF = PN.CODPROD
+      JOIN TGFPRO PF  ON F.CODPRODFISICO = PF.CODPROD
+      JOIN TSIUSU SOL ON F.CODUSUSOLICIT = SOL.CODUSU
+      LEFT JOIN TSIUSU APR ON F.CODUSUAPROV = APR.CODUSU
+      WHERE ${wheres.join(" AND ")}
+      ORDER BY F.DTSOLICIT DESC
+    `).all(...params) as any[];
+
+    const histStmt = await db.prepare(`
+      SELECT H.DATA AS data, H.ACAO AS acao, U.NOMEUSU AS usuario
+      FROM AD_FLUXOHIST H LEFT JOIN TSIUSU U ON H.CODUSU = U.CODUSU
+      WHERE H.NUFLUXODIST = ? ORDER BY H.DATA
+    `);
+    for (const r of rows) r.historico = await histStmt.all(r.id);
+
+    res.json(rows);
+  } catch (e: any) {
+    console.error("[GET fluxo-distinto] ERRO:", e?.message, e?.stack);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * POST /api/fluxo-distinto/:id/decidir
+ */
+router.post("/:id/decidir", async (req, res) => {
+  try {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const { acao, codusu = 5, justificativa } = req.body as any;
+
+    if (!justificativa || String(justificativa).trim().length < 5) {
+      res.status(400).json({ error: "Justificativa é obrigatória (mín. 5 caracteres)" });
+      return;
+    }
+
+    const usu = await db.prepare("SELECT CODGRUPO, PERFIL, NOMEUSU FROM TSIUSU WHERE CODUSU=?")
+      .get(codusu) as any;
+    if (!usu || !["SUPERVISOR", "GERENTE"].includes(usu.PERFIL)) {
+      res.status(403).json({ error: "Aprovação restrita a Supervisor ou Gerente" });
+      return;
+    }
+
+    const fluxo = await db.prepare(`
+      SELECT NUNOTA, CODPRODNF, CODPRODFISICO FROM AD_FLUXODISTINTO WHERE NUFLUXODIST=?
+    `).get(id) as any;
+    if (!fluxo) {
+      res.status(404).json({ error: "Fluxo não encontrado" });
+      return;
+    }
+
+    const status = acao === "APROVAR" ? "APROVADO" : "REJEITADO";
+    await db.prepare(`
+      UPDATE AD_FLUXODISTINTO
+         SET STATUS=?, CODUSUAPROV=?, DTAPROV=datetime('now','localtime'),
+             OBSERVACAO = COALESCE(OBSERVACAO, '') || ' | ' || ?
+       WHERE NUFLUXODIST=?
+    `).run(status, codusu, `${usu.NOMEUSU}: ${justificativa}`, id);
+
+    await db.prepare(`
+      INSERT INTO AD_FLUXOHIST (NUFLUXODIST, DATA, ACAO, CODUSU)
+      VALUES (?, datetime('now','localtime'), ?, ?)
+    `).run(
+      id,
+      `${acao === "APROVAR" ? "Aprovado" : "Rejeitado"} por ${usu.NOMEUSU} — Justificativa: ${justificativa}`,
+      codusu,
+    );
+
+    if (acao === "APROVAR") {
+      // 1º: criar local compensatório (FK alvo do TGFEST)
+      await db.prepare(`
+        INSERT OR REPLACE INTO TGFLOC (CODLOCAL, DESCRLOCAL)
+        VALUES (999, 'Compensatório Fluxo Distinto')
+      `).run();
+      // 2º: estoque do produto NF
+      await db.prepare(`
+        INSERT OR IGNORE INTO TGFEST (CODPROD, CODLOCAL, CONTROLE, ESTOQUE, RESERVADO)
+        VALUES (?, 999, 'COMPENSATORIO', 0, 0)
+      `).run(fluxo.CODPRODNF);
+      await db.prepare(`
+        UPDATE TGFEST SET ESTOQUE = ESTOQUE + 1
+        WHERE CODPROD = ? AND CODLOCAL = 999 AND CONTROLE = 'COMPENSATORIO'
+      `).run(fluxo.CODPRODNF);
+      // 3º: saída para item físico
+      await db.prepare(`
+        INSERT OR IGNORE INTO TGFEST (CODPROD, CODLOCAL, CONTROLE, ESTOQUE, RESERVADO)
+        VALUES (?, 999, 'COMPENSATORIO', 0, 0)
+      `).run(fluxo.CODPRODFISICO);
+      await db.prepare(`
+        UPDATE TGFEST SET ESTOQUE = ESTOQUE - 1
+        WHERE CODPROD = ? AND CODLOCAL = 999 AND CONTROLE = 'COMPENSATORIO'
+      `).run(fluxo.CODPRODFISICO);
+      await db.prepare(`
+        INSERT INTO AD_FLUXOHIST (NUFLUXODIST, DATA, ACAO, CODUSU)
+        VALUES (?, datetime('now','localtime'), 'Movimentos compensatórios de estoque gerados automaticamente', ?)
+      `).run(id, codusu);
+    }
+
+    res.json({ ok: true, status });
+  } catch (e: any) {
+    console.error("[fluxo decidir] ERRO:", e?.message, e?.stack);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * GET /api/fluxo-distinto/:id
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const row = await db.prepare(`
+      SELECT
+        F.NUFLUXODIST AS id,
+        CAB.NUNNOTA AS pedido,
+        PAR.NOMEPARC AS cliente,
+        PN.DESCRPROD AS itemPedidoNF,
+        ('PRD-' || printf('%06d', PN.CODPROD)) AS codPedidoNF,
+        PF.DESCRPROD AS itemFisico,
+        ('PRD-' || printf('%06d', PF.CODPROD)) AS codFisico,
+        F.TIPO AS tipo,
+        F.JUSTIFICATIVA AS justificativa,
+        F.IMPACTO AS impacto,
+        LOWER(F.STATUS) AS status,
+        (SOL.NOMEUSU || ' (' || SOL.PERFIL || ')') AS solicitante,
+        APR.NOMEUSU AS aprovador,
+        F.DTSOLICIT AS dataSolicitacao,
+        F.DTAPROV AS dataAprovacao,
+        F.OBSERVACAO AS observacao
+      FROM AD_FLUXODISTINTO F
+      JOIN TGFCAB CAB ON F.NUNOTA = CAB.NUNOTA
+      JOIN TGFPAR PAR ON CAB.CODPARC = PAR.CODPARC
+      JOIN TGFPRO PN  ON F.CODPRODNF = PN.CODPROD
+      JOIN TGFPRO PF  ON F.CODPRODFISICO = PF.CODPROD
+      JOIN TSIUSU SOL ON F.CODUSUSOLICIT = SOL.CODUSU
+      LEFT JOIN TSIUSU APR ON F.CODUSUAPROV = APR.CODUSU
+      WHERE F.NUFLUXODIST = ?
+    `).get(id) as any;
+    if (!row) {
+      res.status(404).json({ error: "Fluxo não encontrado" });
+      return;
+    }
+    row.historico = await db.prepare(`
+      SELECT H.DATA AS data, H.ACAO AS acao, U.NOMEUSU AS usuario
+      FROM AD_FLUXOHIST H LEFT JOIN TSIUSU U ON H.CODUSU = U.CODUSU
+      WHERE H.NUFLUXODIST = ? ORDER BY H.DATA
+    `).all(id);
+    res.json(row);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * POST /api/fluxo-distinto/:id/devolver
+ */
+router.post("/:id/devolver", async (req, res) => {
+  try {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const { codusu = 5, motivo = "Devolvido para ajuste" } = req.body ?? {};
+    const r = await db.prepare(`
+      UPDATE AD_FLUXODISTINTO
+         SET STATUS = 'REJEITADO', OBSERVACAO = COALESCE(OBSERVACAO, '') || ' | DEVOLUÇÃO: ' || ?
+       WHERE NUFLUXODIST = ?
+    `).run(motivo, id);
+    if (r.changes === 0) {
+      res.status(404).json({ error: "Fluxo não encontrado" });
+      return;
+    }
+    await db.prepare(`
+      INSERT INTO AD_FLUXOHIST (NUFLUXODIST, DATA, ACAO, CODUSU)
+      VALUES (?, datetime('now','localtime'), ?, ?)
+    `).run(id, `Devolvido para ajuste: ${motivo}`, c

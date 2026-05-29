@@ -170,8 +170,14 @@ export async function seed({ reset = false }: { reset?: boolean } = {}) {
   console.log(`[seed] OK (baseline limpo) — ${stmts.length} statements`);
 }
 
-// CLI: tsx server/db/seed.ts --reset
+// CLI: tsx server/db/seed.ts [--reset]  (usa TURSO_DATABASE_URL/TURSO_AUTH_TOKEN se definidos)
 if (import.meta.url === `file://${process.argv[1]}`) {
   const reset = process.argv.includes("--reset");
-  seed({ reset }).then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
+  (async () => {
+    const { applySchema } = await import("./index.js");
+    await applySchema();
+    await seed({ reset });
+  })()
+    .then(() => process.exit(0))
+    .catch((e) => { console.error(e); process.exit(1); });
 }

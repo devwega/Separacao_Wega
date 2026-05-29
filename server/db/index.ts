@@ -79,18 +79,23 @@ export function getDb(): DbFacade {
   };
 }
 
+/** Aplica o schema.sql (idempotente). Necessario antes de seedar um Turso vazio. */
+export async function applySchema(): Promise<void> {
+  const c = getClient();
+  if (fs.existsSync(SCHEMA_PATH)) {
+    let schema = fs.readFileSync(SCHEMA_PATH, "utf-8");
+    // PRAGMA nao e suportado/necessario no Turso (FKs ja aplicadas).
+    schema = schema.replace(/PRAGMA[^;]*;/gi, "");
+    await c.executeMultiple(schema);
+  }
+}
+
 // Inicializacao unica (cold start): aplica schema e roda o seed.
 let _ready: Promise<void> | null = null;
 export function ensureReady(): Promise<void> {
   if (!_ready) {
     _ready = (async () => {
-      const c = getClient();
-      if (fs.existsSync(SCHEMA_PATH)) {
-        let schema = fs.readFileSync(SCHEMA_PATH, "utf-8");
-        // PRAGMA nao e suportado/necessario no Turso (FKs ja aplicadas).
-        schema = schema.replace(/PRAGMA[^;]*;/gi, "");
-        await c.executeMultiple(schema);
-      }
+      await applySchema();
       const { seed } = await import("./seed.js");
       await seed();
     })().catch((e) => {
