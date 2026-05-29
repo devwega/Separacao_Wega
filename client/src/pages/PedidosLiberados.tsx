@@ -35,6 +35,7 @@ import {
   Ship,
   Loader2,
   ListChecks,
+  Undo2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -61,6 +62,12 @@ export default function PedidosLiberados() {
     "post",
     (b) => `/pedidos/${b._nunota}/iniciar-separacao`,
     { successMessage: "Separação iniciada", onSuccess: () => { refetch(); refetchSummary(); } },
+  );
+
+  const estornar = useMutation<{ _nunota: number }>(
+    "post",
+    (b) => `/pedidos/${b._nunota}/estornar-separacao`,
+    { successMessage: "Separação estornada", onSuccess: () => { refetch(); refetchSummary(); } },
   );
 
   return (
@@ -156,9 +163,9 @@ export default function PedidosLiberados() {
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead className="font-semibold text-xs uppercase tracking-wider w-[140px]">Pedido</TableHead>
-              <TableHead className="font-semibold text-xs uppercase tracking-wider">Cliente</TableHead>
+              <TableHead className="font-semibold text-xs uppercase tracking-wider">Parceiro</TableHead>
               <TableHead className="font-semibold text-xs uppercase tracking-wider w-[120px]">
-                <div className="flex items-center gap-1.5"><Ship className="w-3.5 h-3.5" /> Embarque</div>
+                <div className="flex items-center gap-1.5"><Ship className="w-3.5 h-3.5" /> Embarcação</div>
               </TableHead>
               <TableHead className="font-semibold text-xs uppercase tracking-wider w-[100px]">Status</TableHead>
               <TableHead className="font-semibold text-xs uppercase tracking-wider w-[130px] text-center">Progresso</TableHead>
@@ -186,7 +193,8 @@ export default function PedidosLiberados() {
               <TableRow key={pedido.id} className="group hover:bg-accent/50 transition-colors">
                 <TableCell>
                   <div>
-                    <span className="font-medium text-sm text-foreground">{pedido.id}</span>
+                    <span className="font-medium text-sm text-foreground">NU {pedido.nunota}</span>
+                    <span className="block text-[11px] text-muted-foreground">{pedido.id}</span>
                     <div className="flex items-center gap-1 mt-0.5">
                       {pedido.prioridade === "critica" && (
                         <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">CRÍTICO</Badge>
@@ -270,6 +278,21 @@ export default function PedidosLiberados() {
                       </TooltipTrigger>
                       <TooltipContent><p className="text-xs">Visualizar Pendências</p></TooltipContent>
                     </Tooltip>
+                    {pedido.status !== "pendente" && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-amber-600"
+                            disabled={estornar.loading}
+                            onClick={() => {
+                              if (confirm(`Estornar a separação do pedido ${pedido.id}? Limpa divergências, faltas e progresso.`))
+                                estornar.mutate({ _nunota: pedido.nunota });
+                            }}>
+                            <Undo2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent><p className="text-xs">Estornar Separação</p></TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

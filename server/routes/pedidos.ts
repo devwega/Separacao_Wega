@@ -60,8 +60,8 @@ router.get("/", async (req, res) => {
       params.push(String(prioridade).toLowerCase());
     }
     if (q) {
-      wheres.push("(CAB.NUNNOTA LIKE ? OR PAR.NOMEPARC LIKE ?)");
-      params.push(`%${q}%`, `%${q}%`);
+      wheres.push("(CAB.NUNNOTA LIKE ? OR PAR.NOMEPARC LIKE ? OR CAB.ORDEMCARGA LIKE ? OR CAST(CAB.NUNOTA AS TEXT) LIKE ?)");
+      params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
     }
 
     const sql = `
@@ -372,6 +372,32 @@ router.get("/:nunota/auditoria", async (req, res) => {
     eventos.sort((a, b) => (a.data > b.data ? 1 : -1));
     res.json(eventos);
   } catch (e: any) {
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * POST /api/pedidos/:nunota/estornar-separacao  (PL-07)
+ * Estorna toda a separacao do pedido: limpa divergencias, faltas, fluxos e separacao,
+ * volta itens para pendente e o cabecalho para NAO_INICIADO.
+ */
+router.post("/:nunota/estornar-separacao", async (req, res) => {
+  try {
+    const { getClient } = await import("../db/index.js");
+    const c = getClient();
+    const nunota = Number(req.params.nunota);
+    await c.batch([
+      { sql: "DELETE FROM AD_FLUXOHIST WHERE NUFLUXODIST IN (SELECT NUFLUXODIST FROM AD_FLUXODISTINTO WHERE NUNOTA=?)", args: [nunota] },
+      { sql: "DELETE FROM AD_FLUXODISTINTO WHERE NUNOTA=?", args: [nunota] },
+      { sql: "DELETE FROM AD_FALTAITEM WHERE NUNOTA=?", args: [nunota] },
+      { sql: "DELETE FROM AD_TROCAITEM WHERE NUNOTA=?", args: [nunota] },
+      { sql: "DELETE FROM AD_SEPARACAO WHERE NUNOTA=?", args: [nunota] },
+      { sql: "UPDATE TGFITE SET QTDENTREGUE=0, QTDCONFERIDA=0, PENDENTE='S', CONTROLE='', STATUSLOTE='A' WHERE NUNOTA=?", args: [nunota] },
+      { sql: "UPDATE TGFCAB SET STATUSNOTA='L', AD_STATUSSEP='NAO_INICIADO', AD_PERCPROGRESSO=0, AD_DTINICIOSEP=NULL, AD_DTFIMSEP=NULL, AD_CODUSUSEP=NULL, DTFATUR=NULL WHERE NUNOTA=?", args: [nunota] },
+    ], "write");
+    res.json({ ok: true, nunota, status: "NAO_INICIADO" });
+  } catch (e: any) {
+    console.error("[estornar-separacao] ERRO:", e?.message);
     res.status(500).json({ error: e?.message });
   }
 });
