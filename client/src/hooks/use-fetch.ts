@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import { api, extractErrorMessage } from "@/lib/api";
 
 export function useFetch<T>(url: string, params?: Record<string, any>) {
   const [data, setData] = useState<T | null>(null);
@@ -13,7 +13,7 @@ export function useFetch<T>(url: string, params?: Record<string, any>) {
       const res = await api.get<T>(url, { params });
       setData(res.data);
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || "Erro desconhecido");
+      setError(extractErrorMessage(e, "Erro desconhecido"));
     } finally {
       setLoading(false);
     }
@@ -25,4 +25,3 @@ export function useFetch<T>(url: string, params?: Record<string, any>) {
   }, [fetcher]);
 
   return { data, loading, error, refetch: fetcher };
-}

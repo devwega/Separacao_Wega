@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import { api, extractErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 
 type Method = "post" | "put" | "delete" | "patch";
@@ -23,7 +23,7 @@ export function useMutation<TBody = any, TResp = any>(
         opts?.onSuccess?.(res.data);
         return res.data;
       } catch (e: any) {
-        const msg = e?.response?.data?.error || e?.message || "Erro";
+        const msg = extractErrorMessage(e, "Erro");
         setError(msg);
         toast.error(msg);
         return null;
@@ -36,4 +36,3 @@ export function useMutation<TBody = any, TResp = any>(
   );
 
   return { mutate, loading, error };
-}

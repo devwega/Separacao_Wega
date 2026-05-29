@@ -5,6 +5,21 @@ export const api = axios.create({
   timeout: 15000,
 });
 
+/**
+ * Extrai SEMPRE uma string de um erro de requisicao.
+ * O backend retorna { error: "msg" }, mas erros de plataforma (ex.: 500 do Vercel)
+ * retornam { error: { code, message } } — renderizar esse objeto direto quebra o React.
+ */
+export function extractErrorMessage(e: any, fallback = "Erro"): string {
+  const data = e?.response?.data;
+  const err = data?.error;
+  if (typeof err === "string" && err) return err;
+  if (err && typeof err === "object") return err.message || err.code || JSON.stringify(err);
+  if (typeof data?.message === "string") return data.message;
+  if (typeof e?.message === "string") return e.message;
+  return fallback;
+}
+
 export type Pedido = {
   nunota: number;
   id: string;
@@ -133,14 +148,4 @@ export type PreFaturamento = {
     fluxoDistinto: number;
     pendenciasImpeditivas: number;
   };
-  itensConformes: { codigo: string; descricao: string; qtd: number; lote: string; validade: string }[];
-  itensSubstituidos: {
-    codOriginal: string; descOriginal: string;
-    codSubstituto: string; descSubstituto: string;
-    qtdOriginal: number; qtdSubstituta: number;
-    tipo: string; aprovadoPor: string;
-  }[];
-  itensFalta: { codigo: string; descricao: string; qtdPedida: number; qtdFaltante: number; acao: string; previsao: string }[];
-  itensFluxoDistinto: { codNF: string; descNF: string; codFisico: string; descFisico: string; aprovadoPor: string; justificativa: string }[];
-  pendencias: { tipo: string; descricao: string; impeditiva: boolean }[];
-};
+  itensConf
