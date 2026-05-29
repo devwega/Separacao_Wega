@@ -4,6 +4,7 @@
  * Executado em batch (transacao) no primeiro boot.
  */
 import { getClient, resetDb } from "./index.js";
+import { hashPassword } from "../auth.js";
 import type { InStatement } from "@libsql/client";
 
 export async function seedDemoStatusVariants() {
@@ -165,6 +166,12 @@ export async function seed({ reset = false }: { reset?: boolean } = {}) {
         (NUNOTA, SEQUENCIA, CODPROD, CODVOL, QTDNEG, QTDENTREGUE, QTDCONFERIDA, VLRUNIT, VLRTOT,
          CONTROLE, STATUSLOTE, PENDENTE, RESERVA)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, i);
+
+  // Usuario administrador (US-03). Credenciais de login vivem no BIPE (AD_LOGIN).
+  s("INSERT OR REPLACE INTO TSIUSU (CODUSU, NOMEUSU, CODGRUPO, PERFIL) VALUES (?,?,?,?)",
+    [99, "Administrador", 4, "ADMINISTRADOR"]);
+  s("INSERT OR REPLACE INTO AD_LOGIN (CODUSU, LOGIN, SENHA, ATIVO, DTCRIACAO) VALUES (?,?,?,1,?)",
+    [99, "admin", hashPassword("admin@321321"), new Date().toISOString()]);
 
   await c.batch(stmts, "write");
   console.log(`[seed] OK (baseline limpo) — ${stmts.length} statements`);

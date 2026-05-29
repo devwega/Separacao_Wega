@@ -1,6 +1,8 @@
 import "express-async-errors";
 import express from "express";
 import { getDb, getClient, ensureReady } from "./db/index.js";
+import { requireAuth } from "./auth.js";
+import authRoutes from "./routes/auth.js";
 import pedidos from "./routes/pedidos.js";
 import bipagem from "./routes/bipagem.js";
 import divergencias from "./routes/divergencias.js";
@@ -15,7 +17,7 @@ export function createApiApp() {
   app.use((_req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
     next();
   });
   app.options("*", (_req, res) => res.sendStatus(200));
@@ -25,9 +27,12 @@ export function createApiApp() {
     try { await ensureReady(); next(); } catch (e) { next(e); }
   });
 
-  app.get("/api/health", (_req, res) =>
-    res.json({ status: "ok", ts: new Date().toISOString() }),
-  );
+  // Publicos
+  app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: new Date().toISOString() }));
+  app.use("/api/auth", authRoutes); // /login e publico; /me e /usuarios sao protegidos internamente
+
+  // A partir daqui, exige autenticacao
+  app.use(requireAuth);
 
   // POST /api/_reset — zera dados operacionais e volta pedidos para "Liberado/Nao iniciado".
   app.post("/api/_reset", async (_req, res) => {
@@ -61,20 +66,15 @@ export function createApiApp() {
     });
   });
 
-  // Endpoint de diagnostico
   app.get("/api/_debug", async (_req, res) => {
     const db = getDb();
-    const tables = await db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
-    ).all() as any[];
+    const tables = await db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as any[];
     const counts: Record<string, number> = {};
     for (const t of tables) {
       try {
         const r = await db.prepare(`SELECT COUNT(*) as c FROM ${t.name}`).get() as any;
         counts[t.name] = r.c;
-      } catch {
-        counts[t.name] = -1;
-      }
+      } catch { counts[t.name] = -1; }
     }
     res.json({ status: "ok", tables: tables.map((t) => t.name), counts });
   });
@@ -90,11 +90,7 @@ export function createApiApp() {
   app.use((err: any, req: any, res: any, _next: any) => {
     console.error(`\n[API ERROR] ${req.method} ${req.url}`);
     console.error(err?.stack || err);
-    res.status(500).json({
-      error: err?.message || "Erro interno",
-      code: err?.code,
-      path: req.url,
-    });
+    res.status(500).json({ error: err?.message || "Erro interno", code: err?.code, path: req.url });
   });
 
   return app;

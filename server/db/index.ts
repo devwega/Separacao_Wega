@@ -11,6 +11,7 @@ import { createClient, type Client, type InValue } from "@libsql/client";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { hashPassword } from "../auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,12 +99,26 @@ export function ensureReady(): Promise<void> {
       await applySchema();
       const { seed } = await import("./seed.js");
       await seed();
+      // Garante o usuario admin mesmo quando o banco ja estava populado (seed pula).
+      await ensureAdmin();
     })().catch((e) => {
       _ready = null; // permite retry no proximo request
       throw e;
     });
   }
   return _ready;
+}
+
+export async function ensureAdmin(): Promise<void> {
+  const c = getClient();
+  await c.execute("INSERT OR IGNORE INTO TSIUSU (CODUSU, NOMEUSU, CODGRUPO, PERFIL) VALUES (99, 'Administrador', 4, 'ADMINISTRADOR')");
+  const ex = await c.execute("SELECT 1 FROM AD_LOGIN WHERE LOGIN = 'admin'");
+  if (ex.rows.length === 0) {
+    await c.execute({
+      sql: "INSERT INTO AD_LOGIN (CODUSU, LOGIN, SENHA, ATIVO, DTCRIACAO) VALUES (99, 'admin', ?, 1, ?)",
+      args: [hashPassword("admin@321321"), new Date().toISOString()],
+    });
+  }
 }
 
 export async function resetDb(): Promise<void> {

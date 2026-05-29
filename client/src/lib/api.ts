@@ -5,6 +5,31 @@ export const api = axios.create({
   timeout: 15000,
 });
 
+const TOKEN_KEY = "wega_token";
+export const tokenStore = {
+  get: () => (typeof localStorage !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null),
+  set: (t: string) => localStorage.setItem(TOKEN_KEY, t),
+  clear: () => localStorage.removeItem(TOKEN_KEY),
+};
+
+api.interceptors.request.use((config) => {
+  const t = tokenStore.get();
+  if (t) config.headers.Authorization = `Bearer ${t}`;
+  return config;
+});
+
+api.interceptors.response.use(
+  (r) => r,
+  (err) => {
+    if (err?.response?.status === 401 && typeof window !== "undefined") {
+      const had = !!tokenStore.get();
+      tokenStore.clear();
+      if (had) window.location.reload();
+    }
+    return Promise.reject(err);
+  },
+);
+
 /**
  * Extrai SEMPRE uma string de um erro de requisicao.
  * O backend retorna { error: "msg" }, mas erros de plataforma (ex.: 500 do Vercel)

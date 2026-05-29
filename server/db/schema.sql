@@ -241,6 +241,17 @@ CREATE TABLE IF NOT EXISTS AD_FLUXOHIST (
   CODUSU        INTEGER REFERENCES TSIUSU(CODUSU)
 );
 
+-- ---------------------------------------------------------------------------
+-- AD_LOGIN — credenciais de acesso do BIPE (NAO replicado ao Sankhya). US-01..03
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS AD_LOGIN (
+  CODUSU     INTEGER PRIMARY KEY REFERENCES TSIUSU(CODUSU),
+  LOGIN      TEXT NOT NULL UNIQUE,
+  SENHA      TEXT NOT NULL,        -- scrypt: salt:hash
+  ATIVO      INTEGER DEFAULT 1,
+  DTCRIACAO  TEXT
+);
+
 -- Índices úteis
 CREATE INDEX IF NOT EXISTS idx_tgfite_nunota ON TGFITE(NUNOTA);
 CREATE INDEX IF NOT EXISTS idx_tgfest_codprod ON TGFEST(CODPROD);
