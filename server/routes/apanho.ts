@@ -11,7 +11,9 @@ const BASE = `
     ('PRD-' || printf('%06d', F.CODPROD)) AS codigo,
     F.QTDFALTA AS qtdFalta, F.STATUS AS statusFalta,
     COALESCE((SELECT SUM(QTD) FROM AD_APANHO_REG R WHERE R.NUFALTAITEM=F.NUFALTAITEM),0) AS qtdEncontrada,
-    COALESCE((SELECT SUM(QTD) FROM AD_APANHO_REG R WHERE R.NUFALTAITEM=F.NUFALTAITEM AND R.CONFERIDO=1),0) AS qtdConferida
+    COALESCE((SELECT SUM(QTD) FROM AD_APANHO_REG R WHERE R.NUFALTAITEM=F.NUFALTAITEM AND R.CONFERIDO=1),0) AS qtdConferida,
+    (SELECT R.LAT FROM AD_APANHO_REG R WHERE R.NUFALTAITEM=F.NUFALTAITEM AND R.LAT IS NOT NULL ORDER BY R.NUREG DESC LIMIT 1) AS ultimaLat,
+    (SELECT R.LNG FROM AD_APANHO_REG R WHERE R.NUFALTAITEM=F.NUFALTAITEM AND R.LNG IS NOT NULL ORDER BY R.NUREG DESC LIMIT 1) AS ultimaLng
   FROM AD_FALTAITEM F
   JOIN TGFCAB CAB ON F.NUNOTA = CAB.NUNOTA
   JOIN TGFPAR PAR ON CAB.CODPARC = PAR.CODPARC
@@ -62,7 +64,8 @@ router.get("/conferencia", async (_req, res) => {
 router.get("/registros/:id", async (req, res) => {
   const rows = await getDb().prepare(`
     SELECT R.NUREG AS id, R.QTD AS qtd, R.LOTE AS lote, R.VALIDADE AS validade,
-           R.DTREG AS dtReg, R.CONFERIDO AS conferido, U.NOMEUSU AS usuario
+           R.DTREG AS dtReg, R.CONFERIDO AS conferido, U.NOMEUSU AS usuario,
+           R.LAT AS lat, R.LNG AS lng, R.NFCHAVE AS nfChave, R.NFFOTO AS nfFoto
     FROM AD_APANHO_REG R LEFT JOIN TSIUSU U ON U.CODUSU = R.CODUSU
     WHERE R.NUFALTAITEM = ? ORDER BY R.NUREG
   `).all(Number(req.params.id));
@@ -73,14 +76,16 @@ router.get("/registros/:id", async (req, res) => {
 router.post("/:id/registrar", async (req, res) => {
   const db = getDb();
   const id = Number(req.params.id);
-  const { qtd, lote, validade } = (req.body ?? {}) as any;
+  const { qtd, lote, validade, lat, lng, nfChave, nfFoto } = (req.body ?? {}) as any;
   if (!qtd || Number(qtd) <= 0) { res.status(400).json({ error: "Quantidade encontrada inválida" }); return; }
   const falta = await db.prepare("SELECT 1 FROM AD_FALTAITEM WHERE NUFALTAITEM=?").get(id);
   if (!falta) { res.status(404).json({ error: "Item de falta não encontrado" }); return; }
   const u = (req as any).user;
   await db.prepare(
-    "INSERT INTO AD_APANHO_REG (NUFALTAITEM, QTD, LOTE, VALIDADE, DTREG, CODUSU, CONFERIDO) VALUES (?,?,?,?,datetime('now','localtime'),?,0)",
-  ).run(id, Number(qtd), lote || null, validade || null, u?.codusu ?? null);
+    "INSERT INTO AD_APANHO_REG (NUFALTAITEM, QTD, LOTE, VALIDADE, DTREG, CODUSU, CONFERIDO, LAT, LNG, NFCHAVE, NFFOTO) VALUES (?,?,?,?,datetime('now','localtime'),?,0,?,?,?,?)",
+  ).run(id, Number(qtd), lote || null, validade || null, u?.codusu ?? null,
+        (typeof lat === "number" ? lat : null), (typeof lng === "number" ? lng : null),
+        nfChave || null, nfFoto || null);
   res.json({ ok: true });
 });
 

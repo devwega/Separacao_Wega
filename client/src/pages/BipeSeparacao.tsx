@@ -250,6 +250,25 @@ export default function BipeSeparacao() {
   );
   const saldoDisponivel = saldo?.reduce((s, r) => s + (r.disponivel || 0), 0) ?? 0;
 
+  // BS-07/BS-09: o botão único "Confirmar" decide a tratativa conforme a validação.
+  const qtdPedidaAtual = itemAtual?.qtdPedida ?? 0;
+  const qtdSepNum = qtdSep === "" ? qtdPedidaAtual : Number(qtdSep);
+  const eanDivergente = !!validacao && !validacao.ok &&
+    (validacao.flags?.eanOk === false || validacao.flags?.equivalenciaOk === false || !!validacao.outroProduto);
+  const situacao: "conforme" | "divergencia" | "falta" =
+    eanDivergente ? "divergencia"
+    : (qtdSepNum > 0 && qtdSepNum < qtdPedidaAtual ? "falta" : "conforme");
+  const onConfirmar = () => {
+    if (!itemAtual) return;
+    if (situacao === "divergencia") { abrirDialogDivergencia(); return; }
+    if (situacao === "falta") {
+      setFaltaQtd(String(Math.max(1, qtdPedidaAtual - qtdSepNum))); // RN-04: calculada automaticamente
+      setFaltaObs(""); setFaltaCrit("ALTA"); setFaltaOpen(true);
+      return;
+    }
+    handleConfirmar();
+  };
+
   return (
     <div className="space-y-5">
       {/* Pedido header */}
@@ -556,15 +575,22 @@ export default function BipeSeparacao() {
                 )}
               </div>
 
-              {/* Action buttons */}
+              {/* BS-07/BS-09: botão ÚNICO de confirmação — trata conforme / divergência / falta */}
               <div className="flex items-center gap-3 pt-2">
                 <Button
-                  className="gap-2 flex-1 h-11"
+                  className={cn(
+                    "gap-2 flex-1 h-11",
+                    situacao === "divergencia" ? "bg-amber-600 hover:bg-amber-700 text-white"
+                      : situacao === "falta" ? "bg-red-600 hover:bg-red-700 text-white" : "",
+                  )}
                   disabled={conferir.loading || !itemAtual || itemAtual?.status === "conforme"}
-                  onClick={handleConfirmar}
+                  onClick={onConfirmar}
                 >
-                  <Check className="w-4 h-4" />
-                  Confirmar Item Conforme
+                  {situacao === "divergencia" ? <ArrowLeftRight className="w-4 h-4" />
+                    : situacao === "falta" ? <XCircle className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                  {situacao === "divergencia" ? "Confirmar — tratar Divergência"
+                    : situacao === "falta" ? "Confirmar — registrar Falta"
+                    : "Confirmar Item"}
                 </Button>
                 {itemAtual?.status === "conforme" && (
                   <Button
@@ -577,25 +603,11 @@ export default function BipeSeparacao() {
                     Estornar Item
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  className="gap-2 h-11 border-amber-300 text-amber-700 hover:bg-amber-50"
-                  disabled={registrarDivergencia.loading || !itemAtual}
-                  onClick={abrirDialogDivergencia}
-                >
-                  <ArrowLeftRight className="w-4 h-4" />
-                  Registrar Divergência
-                </Button>
-                <Button
-                  variant="outline"
-                  className="gap-2 h-11 border-red-300 text-red-700 hover:bg-red-50"
-                  disabled={registrarFalta.loading || !itemAtual}
-                  onClick={abrirDialogFalta}
-                >
-                  <XCircle className="w-4 h-4" />
-                  Registrar Falta
-                </Button>
               </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Info className="w-3 h-3" />
+                O botão Confirmar trata automaticamente: item conforme, divergência (EAN/equivalência) ou falta (qtd menor que a pedida).
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -706,12 +718,12 @@ export default function BipeSeparacao() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Quantidade faltante</Label>
+                <Label className="text-xs">Quantidade faltante (automática)</Label>
                 <Input
                   type="number"
                   value={faltaQtd}
-                  onChange={(e) => setFaltaQtd(e.target.value)}
-                  className="h-9"
+                  readOnly
+                  className="h-9 bg-muted cursor-not-allowed"
                 />
               </div>
               <div>

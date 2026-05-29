@@ -2,10 +2,10 @@ import { useEffect, useState, useCallback } from "react";
 import { api, extractErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, Loader2, Check } from "lucide-react";
+import { ClipboardCheck, Loader2, Check, QrCode, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
-interface Reg { id: number; qtd: number; lote: string | null; validade: string | null; dtReg: string; conferido: number; usuario: string | null; }
+interface Reg { id: number; qtd: number; lote: string | null; validade: string | null; dtReg: string; conferido: number; usuario: string | null; lat: number | null; lng: number | null; nfChave: string | null; nfFoto: string | null; }
 
 function ItemConf({ item, onChange }: { item: any; onChange: () => void }) {
   const [regs, setRegs] = useState<Reg[]>([]);
@@ -37,10 +37,22 @@ function ItemConf({ item, onChange }: { item: any; onChange: () => void }) {
         <div className="mt-3 space-y-2">
           {loading && <div className="text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-1" />Carregando…</div>}
           {regs.map((r) => (
-            <div key={r.id} className="flex items-center justify-between text-sm border border-border rounded-md px-3 py-2">
-              <span>Qtd <b>{r.qtd}</b>{r.lote ? ` · lote ${r.lote}` : ""}{r.validade ? ` · val ${r.validade}` : ""} <span className="text-xs text-muted-foreground">({r.usuario ?? "—"})</span></span>
-              {r.conferido ? <Badge className="bg-emerald-100 text-emerald-700">conferido</Badge>
-                : <Button size="sm" className="h-7 gap-1" onClick={() => conferir(r.id)}><Check className="w-3.5 h-3.5" /> Conferir</Button>}
+            <div key={r.id} className="border border-border rounded-md px-3 py-2 text-sm space-y-1">
+              <div className="flex items-center justify-between">
+                <span>Qtd <b>{r.qtd}</b>{r.lote ? ` · lote ${r.lote}` : ""}{r.validade ? ` · val ${r.validade}` : ""} <span className="text-xs text-muted-foreground">({r.usuario ?? "—"})</span></span>
+                {r.conferido ? <Badge className="bg-emerald-100 text-emerald-700">conferido</Badge>
+                  : <Button size="sm" className="h-7 gap-1" onClick={() => conferir(r.id)}><Check className="w-3.5 h-3.5" /> Conferir</Button>}
+              </div>
+              {(r.nfChave || (r.lat != null && r.lng != null) || r.nfFoto) && (
+                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                  {r.nfChave && <span className="flex items-center gap-1"><QrCode className="w-3 h-3" /> {r.nfChave}</span>}
+                  {(r.lat != null && r.lng != null) && (
+                    <a className="flex items-center gap-1 text-sky-600 hover:underline" target="_blank" rel="noreferrer"
+                       href={`https://www.google.com/maps?q=${r.lat},${r.lng}`}><MapPin className="w-3 h-3" /> local do apanho</a>
+                  )}
+                  {r.nfFoto && <a href={r.nfFoto} target="_blank" rel="noreferrer"><img src={r.nfFoto} alt="NF" className="h-12 rounded border border-border" /></a>}
+                </div>
+              )}
             </div>
           ))}
           {!loading && regs.length === 0 && <p className="text-sm text-muted-foreground">Sem registros.</p>}

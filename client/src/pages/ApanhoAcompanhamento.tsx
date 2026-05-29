@@ -7,7 +7,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Activity, Loader2, RotateCcw } from "lucide-react";
+import { Activity, Loader2, RotateCcw, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -57,10 +57,11 @@ export default function ApanhoAcompanhamento() {
               <TableHead className="text-center">Encontrado</TableHead>
               <TableHead className="text-center">Pendente</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Local</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin inline mr-2" />Carregando…</TableCell></TableRow>}
+            {loading && <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin inline mr-2" />Carregando…</TableCell></TableRow>}
             {!loading && rows.map((r) => (
               <TableRow key={r.id}>
                 <TableCell><div className="font-medium">{r.item}</div><div className="text-xs text-muted-foreground">{r.marca} · {r.pedido}</div></TableCell>
@@ -69,9 +70,14 @@ export default function ApanhoAcompanhamento() {
                 <TableCell className="text-center text-emerald-700">{r.qtdEncontrada}</TableCell>
                 <TableCell className="text-center text-amber-700">{r.qtdPendente}</TableCell>
                 <TableCell><Badge className={STATUS[r.status]}>{r.status}</Badge></TableCell>
+                <TableCell>
+                  {(r.ultimaLat != null && r.ultimaLng != null)
+                    ? <a className="flex items-center gap-1 text-sky-600 hover:underline text-xs" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${r.ultimaLat},${r.ultimaLng}`}><MapPin className="w-3 h-3" /> ver</a>
+                    : <span className="text-xs text-muted-foreground">—</span>}
+                </TableCell>
               </TableRow>
             ))}
-            {!loading && rows.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">Nenhum item em apanho.</TableCell></TableRow>}
+            {!loading && rows.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Nenhum item em apanho.</TableCell></TableRow>}
           </TableBody>
         </Table>
       </div>

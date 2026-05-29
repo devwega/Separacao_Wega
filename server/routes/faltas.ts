@@ -161,4 +161,23 @@ router.post("/:id/devolver-comercial", async (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * POST /api/faltas/:id/voltar-separacao  (Secao 8 — caminho "compra padrao")
+ * Quando o item comprado entra no estoque, devolve o item para a fila de separacao
+ * (PENDENTE='S') e marca a falta como RESOLVIDA.
+ */
+router.post("/:id/voltar-separacao", async (req, res) => {
+  const db = getDb();
+  const id = Number(req.params.id);
+  const f = await db.prepare("SELECT NUNOTA, SEQUENCIA FROM AD_FALTAITEM WHERE NUFALTAITEM=?").get(id) as any;
+  if (!f) { res.status(404).json({ error: "Falta não encontrada" }); return; }
+  await db.prepare(
+    "UPDATE TGFITE SET PENDENTE='S', QTDENTREGUE=0, QTDCONFERIDA=0, CONTROLE='', STATUSLOTE='A' WHERE NUNOTA=? AND SEQUENCIA=?",
+  ).run(f.NUNOTA, f.SEQUENCIA);
+  await db.prepare("UPDATE AD_FALTAITEM SET STATUS='RESOLVIDO' WHERE NUFALTAITEM=?").run(id);
+  // reativa separacao do pedido se estava concluida
+  await db.prepare("UPDATE TGFCAB SET AD_STATUSSEP='EM_ANDAMENTO' WHERE NUNOTA=? AND AD_STATUSSEP='CONCLUIDO'").run(f.NUNOTA);
+  res.json({ ok: true });
+});
+
 export default router;

@@ -420,4 +420,54 @@ router.post("/:nunota/estornar-separacao", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/pedidos/:nunota/alterar-data  { dtEntrega }  (RN-08)
+ * Altera a data de entrega e revalida a validade dos itens ja separados contra a
+ * validade minima do parceiro: os que ultrapassarem o limite tem a separacao
+ * estornada automaticamente (e sao sinalizados via alertaValidade na listagem).
+ */
+router.post("/:nunota/alterar-data", async (req, res) => {
+  try {
+    const db = getDb();
+    const nunota = Number(req.params.nunota);
+    const { dtEntrega } = req.body as any;
+    if (!dtEntrega) { res.status(400).json({ error: "dtEntrega obrigatória" }); return; }
+    await db.prepare("UPDATE TGFCAB SET DTNEG=? WHERE NUNOTA=?").run(dtEntrega, nunota);
+
+    // validade minima do parceiro (ou global)
+    const pc = await db.prepare(
+      "SELECT CAB.CODPARC, V.DIASMIN FROM TGFCAB CAB LEFT JOIN AD_VALIDADEMIN V ON V.CODPARC=CAB.CODPARC WHERE CAB.NUNOTA=?",
+    ).get(nunota) as any;
+    let minDias = pc?.DIASMIN;
+    if (minDias == null) {
+      const g = await db.prepare("SELECT VALOR FROM AD_PARAM WHERE CHAVE='VALIDADE_MIN_GLOBAL'").get() as any;
+      minDias = g ? Number(g.VALOR) : 30;
+    }
+    // itens separados cuja validade (DTVAL do lote em TGFEST) nao cobre o minimo a partir da nova data
+    const itensRuins = await db.prepare(`
+      SELECT I.SEQUENCIA FROM TGFITE I
+      JOIN TGFEST E ON E.CODPROD=I.CODPROD AND E.CONTROLE=I.CONTROLE
+      WHERE I.NUNOTA=? AND I.PENDENTE='N' AND E.DTVAL IS NOT NULL
+        AND julianday(E.DTVAL) - julianday(?) < ?
+    `).all(nunota, dtEntrega, minDias) as any[];
+
+    for (const it of itensRuins) {
+      await db.prepare(
+        "UPDATE TGFITE SET PENDENTE='S', QTDENTREGUE=0, QTDCONFERIDA=0, CONTROLE='', STATUSLOTE='A' WHERE NUNOTA=? AND SEQUENCIA=?",
+      ).run(nunota, it.SEQUENCIA);
+    }
+    if (itensRuins.length > 0) {
+      const prog = await db.prepare(
+        "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
+      ).get(nunota) as any;
+      const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
+      await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
+        .run(perc, perc === 0 ? "NAO_INICIADO" : "EM_ANDAMENTO", nunota);
+    }
+    res.json({ ok: true, itensEstornados: itensRuins.length, minDias });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message });
+  }
+});
+
 export default router;

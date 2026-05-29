@@ -93,17 +93,36 @@ router.post("/:id/decidir", async (req, res) => {
   const { acao, codusu = 2 } = req.body as { acao: "APROVAR" | "REPROVAR"; codusu?: number };
   const novoStatus = acao === "APROVAR" ? "APROVADO" : "REJEITADO";
 
-  const r = await db.prepare(`
+  const div = await db.prepare(
+    "SELECT NUNOTA, SEQUENCIA, CODPRODSUBST, QTDSUBST FROM AD_TROCAITEM WHERE NUTROCAITEM=?",
+  ).get(id) as any;
+  if (!div) {
+    res.status(404).json({ error: "Divergência não encontrada" });
+    return;
+  }
+
+  await db.prepare(`
     UPDATE AD_TROCAITEM
        SET STATUS = ?, CODUSUAPROV = ?, DTAPROV = datetime('now','localtime')
      WHERE NUTROCAITEM = ?
   `).run(novoStatus, codusu, id);
 
-  if (r.changes === 0) {
-    res.status(404).json({ error: "Divergência não encontrada" });
-    return;
+  // RN-06: ao APROVAR, substitui o item no pedido e devolve para separacao do substituto.
+  if (acao === "APROVAR") {
+    await db.prepare(`
+      UPDATE TGFITE
+         SET CODPROD = ?, QTDNEG = ?, QTDENTREGUE = 0, QTDCONFERIDA = 0,
+             PENDENTE = 'S', CONTROLE = '', STATUSLOTE = 'A'
+       WHERE NUNOTA = ? AND SEQUENCIA = ?
+    `).run(div.CODPRODSUBST, div.QTDSUBST, div.NUNOTA, div.SEQUENCIA);
+    const prog = await db.prepare(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
+    ).get(div.NUNOTA) as any;
+    const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
+    await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
+      .run(perc, perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO", div.NUNOTA);
   }
-  res.json({ ok: true, status: novoStatus });
+  res.json({ ok: true, status: novoStatus, substituido: acao === "APROVAR" });
 });
 
 /**

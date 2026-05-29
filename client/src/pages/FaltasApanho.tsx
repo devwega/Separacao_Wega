@@ -133,6 +133,10 @@ export default function FaltasApanho() {
     "post", (b) => `/faltas/${b._id}/devolver-comercial`,
     { successMessage: "Devolvido ao comercial", onSuccess: () => { refetch(); refetchSum(); } },
   );
+  const voltarSeparacao = useMutation<{ _id: number }>(
+    "post", (b) => `/faltas/${b._id}/voltar-separacao`,
+    { successMessage: "Item devolvido para separação", onSuccess: () => { refetch(); refetchSum(); } },
+  );
 
   const handleInformarPrev = (id: number) => {
     const v = window.prompt("Previsão de retorno (formato YYYY-MM-DD HH:MM):");
@@ -355,7 +359,15 @@ export default function FaltasApanho() {
                             {falta.acaoProposta === "apanho" ? "Apanho em andamento" : "Compra em andamento"}
                           </span>
                         </div>
-                        <Button variant="outline" size="sm" className="gap-1.5 h-7 ml-auto text-xs"
+{falta.acaoProposta === "compra" && (
+                          <Button size="sm" className="gap-1.5 h-7 ml-auto text-xs bg-emerald-600 hover:bg-emerald-700"
+                            disabled={voltarSeparacao.loading}
+                            onClick={() => voltarSeparacao.mutate({ _id: falta.id })}>
+                            <ArrowRight className="w-3 h-3" />
+                            Voltar p/ Separação
+                          </Button>
+                        )}
+                        <Button variant="outline" size="sm" className={cn("gap-1.5 h-7 text-xs", falta.acaoProposta !== "compra" && "ml-auto")}
                           onClick={() => handleInformarPrev(falta.id)}>
                           <CalendarClock className="w-3 h-3" />
                           Atualizar Previsão

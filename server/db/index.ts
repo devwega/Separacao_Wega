@@ -91,12 +91,27 @@ export async function applySchema(): Promise<void> {
   }
 }
 
+/** Migracoes idempotentes (ALTER TABLE ADD COLUMN ignora se ja existe). */
+async function runMigrations(): Promise<void> {
+  const c = getClient();
+  const alters = [
+    "ALTER TABLE AD_APANHO_REG ADD COLUMN LAT REAL",
+    "ALTER TABLE AD_APANHO_REG ADD COLUMN LNG REAL",
+    "ALTER TABLE AD_APANHO_REG ADD COLUMN NFCHAVE TEXT",
+    "ALTER TABLE AD_APANHO_REG ADD COLUMN NFFOTO TEXT",
+  ];
+  for (const a of alters) {
+    try { await c.execute(a); } catch { /* coluna ja existe */ }
+  }
+}
+
 // Inicializacao unica (cold start): aplica schema e roda o seed.
 let _ready: Promise<void> | null = null;
 export function ensureReady(): Promise<void> {
   if (!_ready) {
     _ready = (async () => {
       await applySchema();
+      await runMigrations();
       const { seed } = await import("./seed.js");
       await seed();
       // Garante o usuario admin mesmo quando o banco ja estava populado (seed pula).
