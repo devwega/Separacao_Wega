@@ -40,6 +40,7 @@ export function createApiApp() {
   app.post("/api/_reset", async (_req, res) => {
     const c = getClient();
     await c.batch([
+      "DELETE FROM AD_APANHO_REG",
       "DELETE FROM AD_FLUXOHIST",
       "DELETE FROM AD_FLUXODISTINTO",
       "DELETE FROM AD_FALTAITEM",

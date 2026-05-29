@@ -389,6 +389,7 @@ router.post("/:nunota/estornar-separacao", async (req, res) => {
     await c.batch([
       { sql: "DELETE FROM AD_FLUXOHIST WHERE NUFLUXODIST IN (SELECT NUFLUXODIST FROM AD_FLUXODISTINTO WHERE NUNOTA=?)", args: [nunota] },
       { sql: "DELETE FROM AD_FLUXODISTINTO WHERE NUNOTA=?", args: [nunota] },
+      { sql: "DELETE FROM AD_APANHO_REG WHERE NUFALTAITEM IN (SELECT NUFALTAITEM FROM AD_FALTAITEM WHERE NUNOTA=?)", args: [nunota] },
       { sql: "DELETE FROM AD_FALTAITEM WHERE NUNOTA=?", args: [nunota] },
       { sql: "DELETE FROM AD_TROCAITEM WHERE NUNOTA=?", args: [nunota] },
       { sql: "DELETE FROM AD_SEPARACAO WHERE NUNOTA=?", args: [nunota] },
