@@ -1,6 +1,21 @@
 import { Router } from "express";
 import { getDb } from "../db/index.js";
 
+/** RN-07: criticidade automatica pelo horario de carregamento (HH:MM). Criterio padrao. */
+function criticidade(horario?: string): "critica" | "alta" | "media" | "baixa" {
+  if (!horario) return "media";
+  const [h, m] = String(horario).split(":").map(Number);
+  if (Number.isNaN(h)) return "media";
+  const now = new Date();
+  const alvo = new Date(now); alvo.setHours(h, m || 0, 0, 0);
+  let diffH = (alvo.getTime() - now.getTime()) / 3600000;
+  if (diffH < 0) diffH += 24;
+  if (diffH < 2) return "critica";
+  if (diffH < 4) return "alta";
+  if (diffH < 8) return "media";
+  return "baixa";
+}
+
 const router = Router();
 
 export const STATUS_PEDIDO_SQL = `
@@ -101,7 +116,7 @@ router.get("/", async (req, res) => {
     `;
 
     const rows = await db.prepare(sql).all(...params) as any[];
-    rows.forEach((r) => (r.alertaValidade = !!r.alertaValidade));
+    rows.forEach((r) => { r.alertaValidade = !!r.alertaValidade; r.criticidade = criticidade(r.horarioCarregamento); });
     res.json(rows);
   } catch (e: any) {
     console.error("[GET /api/pedidos] ERRO:", e?.message);
@@ -212,6 +227,8 @@ router.get("/:nunota", async (req, res) => {
         I.SEQUENCIA AS id, I.CODPROD AS codprod, P.DESCRPROD AS descricao,
         ('PRD-' || printf('%06d', I.CODPROD)) AS codigo,
         P.REFERENCIA AS eanEsperado,
+        P.MARCA AS marca,
+        EXISTS(SELECT 1 FROM AD_FALTAITEM F WHERE F.NUNOTA=I.NUNOTA AND F.SEQUENCIA=I.SEQUENCIA AND F.STATUS IN ('PENDENTE','EM_TRATAMENTO')) AS temFalta,
         I.QTDNEG AS qtdPedida, I.QTDENTREGUE AS qtdSeparada,
         I.CONTROLE AS lote, I.STATUSLOTE AS statusLote,
         CASE I.PENDENTE
@@ -227,7 +244,7 @@ router.get("/:nunota", async (req, res) => {
       ORDER BY I.SEQUENCIA
     `).all(nunota);
 
-    res.json({ ...pedido, itens });
+    res.json({ ...pedido, criticidade: criticidade((pedido as any).horarioCarregamento), itens });
   } catch (e: any) {
     console.error("[GET pedido] ERRO:", e?.message, e?.stack);
     res.status(500).json({ error: e?.message });

@@ -41,6 +41,8 @@ import {
   Layers,
   ArrowLeftRight,
   Info,
+  Undo2,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -78,6 +80,9 @@ export default function BipeSeparacao() {
       codprod: i.codprod,
       descricao: i.descricao,
       eanEsperado: i.eanEsperado,
+      marca: i.marca,
+      lote: i.lote,
+      temFalta: !!i.temFalta,
       qtdPedida: i.qtdPedida,
       qtdSeparada: i.qtdSeparada,
       status: (i.status as "conforme" | "separacao" | "pendente") ?? "pendente",
@@ -112,12 +117,20 @@ export default function BipeSeparacao() {
 
   // Reset campos ao trocar de item
   useEffect(() => {
+    const it = itens.find((i) => i.id === itemAtualId);
     setEan("");
-    setLote("");
     setValidade("");
-    setQtdSep("");
     setQtdFalt("");
     setValidacao(null);
+    // BS-05: ao reabrir item ja separado, traz lote e qtd separada
+    if (it && it.status === "conforme") {
+      setLote(it.lote || "");
+      setQtdSep(String(it.qtdSeparada || ""));
+    } else {
+      setLote("");
+      setQtdSep("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemAtualId]);
 
   // Dialog state — Divergência
@@ -150,6 +163,14 @@ export default function BipeSeparacao() {
   const registrarFalta = useMutation(
     "post", "/bipagem/registrar-falta",
     { successMessage: "Falta registrada", onSuccess: () => { refetch(); setFaltaOpen(false); setFaltaQtd(""); setFaltaObs(""); setValidacao(null); } },
+  );
+  const estornarItem = useMutation(
+    "post", "/bipagem/estornar-item",
+    { successMessage: "Separação do item estornada", onSuccess: () => { refetch(); setValidacao(null); } },
+  );
+  const estornarTudo = useMutation<{ _n: number }>(
+    "post", (b) => `/pedidos/${b._n}/estornar-separacao`,
+    { successMessage: "Separação completa estornada", onSuccess: () => { refetch(); } },
   );
 
   const handleBipar = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -244,6 +265,17 @@ export default function BipeSeparacao() {
                   status={(pedido as any)?.statusPedido ?? "EM_SEPARACAO"}
                   size="md"
                 />
+                {(pedido as any)?.criticidade && (
+                  <span className={cn(
+                    "text-[11px] px-2 py-0.5 rounded-full border flex items-center gap-1",
+                    (pedido as any).criticidade === "critica" ? "bg-red-100 text-red-700 border-red-200"
+                      : (pedido as any).criticidade === "alta" ? "bg-amber-100 text-amber-700 border-amber-200"
+                      : (pedido as any).criticidade === "media" ? "bg-sky-100 text-sky-700 border-sky-200"
+                      : "bg-slate-100 text-slate-600 border-slate-200",
+                  )}>
+                    <Gauge className="w-3 h-3" /> {(pedido as any).criticidade}
+                  </span>
+                )}
               </div>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {pedido?.cliente ?? "—"}
@@ -275,6 +307,18 @@ export default function BipeSeparacao() {
             <div className="w-32">
               <Progress value={progresso} className="h-2" />
             </div>
+            <Button
+              variant="ghost" size="sm"
+              className="gap-1.5 text-red-600 hover:bg-red-50"
+              disabled={estornarTudo.loading}
+              onClick={() => {
+                if (confirm("Estornar a separação COMPLETA deste pedido? Isso limpa divergências, faltas e progresso.") &&
+                    confirm("Confirmar novamente: esta ação não pode ser desfeita."))
+                  estornarTudo.mutate({ _n: nunota });
+              }}
+            >
+              <Undo2 className="w-4 h-4" /> Estornar Separação Completa
+            </Button>
           </div>
         </div>
       </div>
@@ -307,10 +351,13 @@ export default function BipeSeparacao() {
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono text-muted-foreground">{item.codigo}</span>
                         <StatusBadge status={item.status} />
+                        {(item as any).temFalta && (
+                          <span className="text-[10px] px-1.5 py-0 rounded-full bg-red-100 text-red-700 border border-red-200">FALTA</span>
+                        )}
                       </div>
                       <p className="text-sm text-foreground mt-0.5 truncate">{item.descricao}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {item.qtdSeparada}/{item.qtdPedida} un
+                        {(item as any).marca ? `${(item as any).marca} · ` : ""}{item.qtdSeparada}/{item.qtdPedida} un
                       </p>
                     </div>
                     {itemAtual && item.id === itemAtual.id && (
@@ -351,8 +398,8 @@ export default function BipeSeparacao() {
                         {itemAtual?.codigo ?? "—"}
                       </span>
                       <span className="flex items-center gap-1">
-                        <ScanBarcode className="w-3.5 h-3.5" />
-                        EAN: {itemAtual?.eanEsperado ?? "—"}
+                        <Package className="w-3.5 h-3.5" />
+                        Marca: {(itemAtual as any)?.marca ?? "—"}
                       </span>
                     </div>
                   </div>
@@ -513,12 +560,23 @@ export default function BipeSeparacao() {
               <div className="flex items-center gap-3 pt-2">
                 <Button
                   className="gap-2 flex-1 h-11"
-                  disabled={conferir.loading || !itemAtual}
+                  disabled={conferir.loading || !itemAtual || itemAtual?.status === "conforme"}
                   onClick={handleConfirmar}
                 >
                   <Check className="w-4 h-4" />
                   Confirmar Item Conforme
                 </Button>
+                {itemAtual?.status === "conforme" && (
+                  <Button
+                    variant="outline"
+                    className="gap-2 h-11 border-slate-300 text-slate-700 hover:bg-slate-50"
+                    disabled={estornarItem.loading}
+                    onClick={() => estornarItem.mutate({ nunota, sequencia: itemAtual.id } as any)}
+                  >
+                    <Undo2 className="w-4 h-4" />
+                    Estornar Item
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   className="gap-2 h-11 border-amber-300 text-amber-700 hover:bg-amber-50"
