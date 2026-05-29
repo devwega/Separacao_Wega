@@ -6,8 +6,13 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, "sankhya.sqlite");
-const SCHEMA_PATH = path.resolve(__dirname, "schema.sql");
+// Em serverless (ex.: Vercel) o filesystem e somente leitura, exceto /tmp.
+const DB_PATH =
+  process.env.DB_PATH ||
+  (process.env.VERCEL ? "/tmp/sankhya.sqlite" : path.resolve(__dirname, "sankhya.sqlite"));
+// SCHEMA_PATH pode ser sobrescrito por env (necessario quando o codigo e empacotado
+// e __dirname deixa de apontar para a pasta original do schema).
+const SCHEMA_PATH = process.env.SCHEMA_PATH || path.resolve(__dirname, "schema.sql");
 
 let _db: Database.Database | null = null;
 
@@ -37,19 +42,3 @@ export function resetDb(): void {
     _db.close();
     _db = null;
   }
-  if (fs.existsSync(DB_PATH)) {
-    fs.unlinkSync(DB_PATH);
-  }
-  // Remove arquivos WAL/SHM
-  for (const suffix of ["-wal", "-shm"]) {
-    const p = DB_PATH + suffix;
-    if (fs.existsSync(p)) fs.unlinkSync(p);
-  }
-}
-
-export function closeDb(): void {
-  if (_db) {
-    _db.close();
-    _db = null;
-  }
-}
