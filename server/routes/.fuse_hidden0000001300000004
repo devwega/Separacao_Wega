@@ -156,9 +156,4 @@ router.post("/:id/devolver-comercial", async (req, res) => {
   `).run(id);
   if (r.changes === 0) {
     res.status(404).json({ error: "Falta não encontrada" });
-    return;
-  }
-  res.json({ ok: true });
-});
-
-export default router;
+    return

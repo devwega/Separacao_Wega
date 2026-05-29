@@ -222,9 +222,4 @@ router.get("/saldo/:codprod", async (req, res) => {
     `).all(codprod);
     res.json(rows);
   } catch (e: any) {
-    console.error("[saldo] ERRO:", e?.message, e?.stack);
-    res.status(500).json({ error: e?.message });
-  }
-});
-
-export default router;
+    console.error("

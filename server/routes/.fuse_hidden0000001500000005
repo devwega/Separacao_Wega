@@ -235,11 +235,4 @@ router.post("/:id/devolver", async (req, res) => {
     await db.prepare(`
       INSERT INTO AD_FLUXOHIST (NUFLUXODIST, DATA, ACAO, CODUSU)
       VALUES (?, datetime('now','localtime'), ?, ?)
-    `).run(id, `Devolvido para ajuste: ${motivo}`, codusu);
-    res.json({ ok: true });
-  } catch (e: any) {
-    res.status(500).json({ error: e?.message });
-  }
-});
-
-export default router;
+    `).run(id, `Devolvido para ajuste: ${motivo}`, c

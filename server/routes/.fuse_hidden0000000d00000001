@@ -369,11 +369,4 @@ router.get("/:nunota/auditoria", async (req, res) => {
       data: cab.DTFATUR, tipo: "FATURAMENTO", descricao: "Pedido faturado",
     });
 
-    eventos.sort((a, b) => (a.data > b.data ? 1 : -1));
-    res.json(eventos);
-  } catch (e: any) {
-    res.status(500).json({ error: e?.message });
-  }
-});
-
-export default router;
+    eventos.sort((a, b) => (a.data > b.data

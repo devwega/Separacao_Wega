@@ -214,10 +214,4 @@ router.post("/:nunota/devolver-ajuste", async (req, res) => {
     UPDATE TGFCAB SET AD_STATUSSEP = 'NAO_INICIADO' WHERE NUNOTA = ?
   `).run(nunota);
   if (r.changes === 0) {
-    res.status(404).json({ error: "Pedido não encontrado" });
-    return;
-  }
-  res.json({ ok: true, motivo });
-});
-
-export default router;
+    res.status(404).json({ error: "Pedido não enco

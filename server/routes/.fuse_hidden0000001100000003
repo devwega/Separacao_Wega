@@ -182,9 +182,4 @@ router.post("/:id/encaminhar-gestor", async (req, res) => {
     VALUES (?, datetime('now','localtime'), 'Encaminhado pelo comercial para aprovação gerencial', ?)
   `).run(r.lastInsertRowid, codusu);
 
-  await db.prepare(`UPDATE AD_TROCAITEM SET STATUS='BLOQUEADO' WHERE NUTROCAITEM = ?`).run(id);
-
-  res.json({ ok: true, nufluxodist: r.lastInsertRowid });
-});
-
-export default router;
+  await db.prepare(`UPDATE AD_TROCAITEM SET STATUS='BLOQUEADO' WHERE NUTROCAITEM = ?`).run(id
