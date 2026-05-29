@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Relatório de Testes — Layout Troca Itens Sankhya</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel2: #273449;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --primary: #38bdf8;
+    --primary-2: #0ea5e9;
+    --pass: #22c55e;
+    --warn: #f59e0b;
+    --fail: #ef4444;
+    --pending: #64748b;
+    --code-bg: #0b1220;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .container { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header .logo {
+    width: 56px; height: 56px; border-radius: 12px;
+    background: linear-gradient(135deg, #38bdf8, #6366f1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+  }
+  h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  .subtitle { color: var(--muted); margin: 4px 0 0; font-size: 14px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; font-size: 12px;
+    font-weight: 600; border: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .pill.warn { color: #fbbf24; border-color: #b45309; background: rgba(180,83,9,0.15); }
+  .pill.ok { color: #4ade80; border-color: #15803d; background: rgba(21,128,61,0.15); }
+
+  .summary {
+    margin: 28px 0 0;
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 18px;
+  }
+  .stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .value { font-size: 32px; font-weight: 700; line-height: 1.1; margin-top: 6px; tabular-nums: 1; }
+  .stat .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .stat.pass .value { color: var(--pass); }
+  .stat.pending .value { color: var(--warn); }
+  .stat.fail .value { color: var(--fail); }
+
+  .alert {
+    margin-top: 28px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-left: 4px solid var(--warn);
+    padding: 16px 18px;
+    border-radius: 10px;
+    font-size: 14px;
+  }
+  .alert strong { color: #fbbf24; }
+  code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  h2 {
+    margin: 36px 0 12px;
+    font-size: 18px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+
+  .suite {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .suite-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+    background: var(--panel);
+    transition: background 0.15s;
+  }
+  .suite-head:hover { background: var(--panel2); }
+  .suite-title { display: flex; align-items: center; gap: 12px; }
+  .suite-title .icon {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+    background: rgba(56, 189, 248, 0.15);
+    color: var(--primary);
+  }
+  .suite-title .name { font-weight: 600; font-size: 15px; }
+  .suite-title .path { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
+  .suite-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+  .badge { padding: 2px 8px; border-radius: 999px; background: rgba(100,116,139,0.2); border: 1px solid var(--border); font-weight: 600; }
+  .suite-body {
+    border-top: 1px solid var(--border);
+    padding: 4px 0;
+    display: none;
+    background: #0c1828;
+  }
+  .suite.open .suite-body { display: block; }
+  .suite.open .chev { transform: rotate(90deg); }
+  .chev { transition: transform 0.15s; color: var(--muted); }
+
+  .test {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 9px 18px 9px 56px;
+    font-size: 13.5px;
+    border-top: 1px solid rgba(51,65,85,0.4);
+  }
+  .test:first-child { border-top: 0; }
+  .test .status {
+    width: 16px; height: 16px; border-radius: 50%;
+    flex-shrink: 0; margin-top: 3px;
+    background: var(--pending);
+    border: 2px solid rgba(0,0,0,0.2);
+    box-shadow: inset 0 0 0 3px var(--panel);
+  }
+  .test.pending .status { background: var(--pending); }
+  .test.pass .status { background: var(--pass); }
+  .test.fail .status { background: var(--fail); }
+  .test .desc { color: var(--text); }
+  .test .desc .muted { color: var(--muted); }
+
+  .toolbar {
+    display: flex; gap: 8px; align-items: center;
+    margin: 12px 0 18px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: var(--panel2); }
+  .btn.primary { background: var(--primary-2); border-color: var(--primary-2); color: white; }
+  .btn.primary:hover { background: var(--primary); }
+
+  .footer { color: var(--muted); margin-top: 40px; font-size: 12px; text-align: center; }
+
+  details summary { cursor: pointer; padding: 8px 0; color: var(--primary); font-weight: 600; }
+  details[open] summary { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">🧪</div>
+    <div>
+      <h1>Relatório de Testes — Telas Sankhya</h1>
+      <p class="subtitle">Suite Vitest + Testing Library • Projeto <code>layout-troca-itens-sankhya</code></p>
+    </div>
+    <div style="margin-left:auto; display:flex; gap:8px;">
+      <span class="pill warn">⚠ Não executado no sandbox</span>
+      <span class="pill ok">✓ Suite pronta</span>
+    </div>
+  </header>
+
+  <div class="summary">
+    <div class="stat"><div class="label">Test Suites</div><div class="value">9</div><div class="hint">arquivos <code>.test.tsx</code></div></div>
+    <div class="stat pass"><div class="label">Test Cases</div><div class="value">67</div><div class="hint">asserções <code>it()</code></div></div>
+    <div class="stat"><div class="label">Telas cobertas</div><div class="value">9 / 9</div><div class="hint">100% das pages</div></div>
+    <div class="stat pending"><div class="label">Status execução</div><div class="value" style="font-size:18px; padding-top:14px;">Pendente</div><div class="hint">rodar local: <code>pnpm test:run</code></div></div>
+  </div>
+
+  <div class="alert">
+    <strong>⚠ Nota sobre execução:</strong> a execução do <code>vitest run</code> não foi possível dentro deste sandbox porque
+    o <code>node_modules</code> existente foi instalado em ambiente Windows (pnpm) com symlinks apontando para caminhos
+    <code>/mnt/c/...</code> que não existem aqui, e uma reinstalação completa excede o limite de 45s por comando do shell.
+    Os 9 arquivos de teste estão prontos no projeto — basta rodar localmente.
+  </div>
+
+  <h2>Como executar localmente</h2>
+  <pre>cd C:\Sankhya\layout-troca-itens-sankhya
+
+# Roda a suite completa em modo headless
+pnpm test:run
+
+# Modo interativo com watch + UI no navegador
+pnpm test:ui
+
+# Com cobertura (gera ./coverage/index.html)
+pnpm test:coverage</pre>
+
+  <div class="toolbar">
+    <button class="btn primary" onclick="document.querySelectorAll('.suite').forEach(s=>s.classList.add('open'))">Expandir todos</button>
+    <button class="btn" onclick="document.querySelectorAll('.suite').forEach(s=>s.classList.remove('open'))">Recolher todos</button>
+    <span style="color:var(--muted); font-size:12px; margin-left:auto;">Clique em uma suite para ver os testes</span>
+  </div>
+
+  <h2 style="border:none; margin-top:10px;">Suites de Teste</h2>
+
+  <div id="suites"></div>
+
+  <h2>Estratégia de cobertura</h2>
+  <div style="background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px 20px; font-size:14px;">
+    <p style="margin:0 0 10px;">Cada suite cobre os <strong>pontos críticos de UI</strong> da tela correspondente:</p>
+    <ul style="margin:0 0 0 18px; padding:0;">
+      <li><strong>Renderização do título e descrição</strong> — sanity check de mounting.</li>
+      <li><strong>Summary cards com totais do mock</strong> — garantia de KPIs visíveis.</li>
+      <li><strong>Dados mockados na lista/tabela</strong> — todos os <code>PV-2024-XXX</code> e SKUs aparecem.</li>
+      <li><strong>Filtros e inputs</strong> — placeholders e <code>inputMode</code> corretos (importante no mobile).</li>
+      <li><strong>Badges de status e criticidade</strong> — CRÍTICO, ALTA, Homologada, etc.</li>
+      <li><strong>Botões de ação contextuais</strong> — só aparecem quando o status pede.</li>
+    </ul>
+    <p style="margin:14px 0 0; color:var(--muted);">Estilo segue o padrão já existente em <code>PedidosLiberados.test.tsx</code>: render via <code>TooltipProvider</code>, queries do Testing Library por role/text/placeholder, sem snapshots.</p>
+  </div>
+
+  <h2>Arquivos criados</h2>
+  <pre>tests/unit/pages/
+├── BipeMobile.test.tsx        ← novo
+├── BipeSeparacao.test.tsx     ← novo
+├── DivergenciasTrocas.test.tsx ← novo
+├── FaltasApanho.test.tsx      ← novo
+├── FluxoDistinto.test.tsx     ← novo
+├── Home.test.tsx              ← novo
+├── NotFound.test.tsx          ← novo
+├── PedidosLiberados.test.tsx  ← já existia
+└── PreFaturamento.test.tsx    ← novo</pre>
+
+  <div class="footer">
+    Gerado em <span id="now"></span> • Vitest 2.1.4 + Testing Library + jsdom
+  </div>
+</div>
+
+<script>
+  const suites = [
+    {
+      name: "<PedidosLiberados />",
+      file: "tests/unit/pages/PedidosLiberados.test.tsx",
+      existing: true,
+      tests: [
+        "exibe o título e descrição da página",
+        "renderiza os 4 summary cards com os totais do mock",
+        "renderiza todos os pedidos mockados na tabela",
+        "mostra o badge CRÍTICO para o pedido bloqueado prioridade crítica",
+        "mostra ao menos um badge ALTA",
+        "exibe o input de busca",
+        "renderiza cabeçalhos da tabela",
+      ],
+    },
+    {
+      name: "<BipeSeparacao />",
+      file: "tests/unit/pages/BipeSeparacao.test.tsx",
+      tests: [
+        "renderiza o cabeçalho do pedido com número e cliente",
+        "exibe metadados do pedido (embarcação, horário, responsável)",
+        "mostra contador de progresso 2 de 6 itens",
+        "lista todos os itens do pedido na coluna esquerda",
+        "renderiza o painel de bipagem com input de EAN",
+        "exibe o item atual em destaque com EAN esperado",
+        "renderiza os campos de lote, validade, qtd separada e faltante",
+        "mostra o saldo reservado de estoque",
+        "renderiza os três botões de ação principais",
+        "exibe a seção de validação visual com EAN, Lote, Validade e Equivalência",
+      ],
+    },
+    {
+      name: "<BipeMobile />",
+      file: "tests/unit/pages/BipeMobile.test.tsx",
+      tests: [
+        "renderiza o header com número do pedido e cliente",
+        "mostra contador de itens 2/6 no header",
+        "indica progresso percentual no cabeçalho",
+        "apresenta o botão Voltar para a tela desktop",
+        "destaca o item atual com descrição e código",
+        "renderiza o input grande de bipagem com autoFocus e teclado numérico",
+        "renderiza os 4 campos complementares (lote, validade, qtd separada, faltante)",
+        "renderiza os botões principais de ação (Confirmar / Divergência / Falta)",
+        "renderiza o trigger do drawer 'Ver todos os itens do pedido'",
+        "mostra o badge 'Protótipo Mobile'",
+      ],
+    },
+    {
+      name: "<DivergenciasTrocas />",
+      file: "tests/unit/pages/DivergenciasTrocas.test.tsx",
+      tests: [
+        "renderiza o título da página e descrição",
+        "renderiza os 4 summary cards com totais corretos do mock",
+        "exibe o campo de busca por pedido, item ou cliente",
+        "renderiza cards das 4 divergências do mock",
+        "mostra os itens originais e substitutos das divergências",
+        "indica fator de conversão para divergências de proporção",
+        "classifica divergências como homologadas ou não homologadas",
+        "renderiza botões de ação 'Aprovar Troca' e 'Reprovar' para pendências",
+        "exibe estado 'Troca aprovada pelo comercial' para divergências conformes",
+        "destaca necessidade de aprovação obrigatória do cliente",
+      ],
+    },
+    {
+      name: "<FaltasApanho />",
+      file: "tests/unit/pages/FaltasApanho.test.tsx",
+      tests: [
+        "renderiza o título e descrição da página",
+        "renderiza os 4 summary cards de KPI",
+        "exibe os filtros de busca e selects (Criticidade, Tipo, Ação)",
+        "lista todas as 4 faltas do mock com seus itens",
+        "apresenta criticidade dos itens (Crítica, Alta, Média)",
+        "distingue faltas totais e parciais via badges",
+        "mostra informação de embarcação e horário de carregamento",
+        "indica ações já aplicadas (Apanho / Compra Padrão)",
+        "oferece botões de tratativa para faltas sem ação proposta",
+        "destaca tempo restante crítico (15min)",
+      ],
+    },
+    {
+      name: "<FluxoDistinto />",
+      file: "tests/unit/pages/FluxoDistinto.test.tsx",
+      tests: [
+        "renderiza o título e descrição da página",
+        "exibe o banner de alerta sobre restrição de aprovação",
+        "lista os fluxos distintos do mock com pedido e cliente",
+        "apresenta a comparação item NF vs item físico",
+        "mostra solicitante e data da solicitação",
+        "exibe justificativas dos fluxos",
+        "mostra histórico de eventos do fluxo",
+        "descreve impacto da aprovação (movimento compensatório)",
+      ],
+    },
+    {
+      name: "<PreFaturamento />",
+      file: "tests/unit/pages/PreFaturamento.test.tsx",
+      tests: [
+        "renderiza o resumo do pedido com número e cliente",
+        "exibe metadados do pedido (embarcação, horário, responsável)",
+        "renderiza summary cards de KPIs",
+        "lista itens conformes com lote e validade",
+        "mostra itens substituídos com original e substituto",
+        "apresenta itens em falta com ação proposta",
+        "renderiza seção de fluxo distinto com aprovador",
+        "alerta sobre pendências impeditivas",
+      ],
+    },
+    {
+      name: "<Home />",
+      file: "tests/unit/pages/Home.test.tsx",
+      tests: [
+        "é um alias para PedidosLiberados — renderiza o título da página",
+      ],
+    },
+    {
+      name: "<NotFound />",
+      file: "tests/unit/pages/NotFound.test.tsx",
+      tests: [
+        "renderiza o título 404",
+        "exibe 'Page Not Found' e mensagem explicativa",
+        "renderiza botão 'Go Home'",
+      ],
+    },
+  ];
+
+  const root = document.getElementById('suites');
+  const iconFor = (name) => {
+    if (name.includes("Bipe")) return "📱";
+    if (name.includes("Divergencia")) return "🔄";
+    if (name.includes("Falta")) return "⚠";
+    if (name.includes("Fluxo")) return "🛡";
+    if (name.includes("Pre")) return "📄";
+    if (name.includes("Pedidos")) return "📦";
+    if (name.includes("NotFound")) return "❓";
+    if (name.includes("Home")) return "🏠";
+    return "🧩";
+  };
+  for (const s of suites) {
+    const el = document.createElement("div");
+    el.className = "suite";
+    el.innerHTML = `
+      <div class="suite-head">
+        <div class="suite-title">
+          <div class="icon">${iconFor(s.name)}</div>
+          <div>
+            <div class="name">${s.name} ${s.existing ? '<span class="badge" style="color:#4ade80; background:rgba(21,128,61,0.15); border-color:#15803d;">já existia</span>' : '<span class="badge" style="color:#38bdf8; background:rgba(56,189,248,0.1); border-color:#0e7490;">novo</span>'}</div>
+            <div class="path">${s.file}</div>
+          </div>
+        </div>
+        <div class="suite-meta">
+          <span class="badge">${s.tests.length} tests</span>
+          <span class="chev">▶</span>
+        </div>
+      </div>
+      <div class="suite-body">
+        ${s.tests.map(t => `
+          <div class="test pending">
+            <div class="status"></div>
+            <div class="desc">${t} <span class="muted">— pending</span></div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    el.querySelector(".suite-head").addEventListener("click", () => el.classList.toggle("open"));
+    root.appendChild(el);
+  }
+  // Expand first suite for visibility
+  document.querySelector(".suite")?.classList.add("open");
+  document.getElementById("now").textContent = new Date().toLocaleString("pt-BR");
+</script>
+</body>
+</html>

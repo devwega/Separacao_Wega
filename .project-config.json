@@ -1,0 +1,35 @@
+{
+  "build_command": "pnpm run build",
+  "capabilities": [],
+  "dev_command": "pnpm run dev",
+  "env_vars": {},
+  "experiments": null,
+  "git_remote": {
+    "repo_url": "s3://vida-prod-gitrepo/webdev-git/310419663028532971/6mR3SndJj3RgbgEoKYmPe7",
+    "access_key_id": "ASIAZV3A2ECZEHP3TNZ3",
+    "secret_access_key": "3q70aTLD9r0RXSLqbRnmNfWiRQ4Kvg1GbqaBGxkB",
+    "session_token": "IQoJb3JpZ2luX2VjEJr//////////wEaCXVzLWVhc3QtMSJGMEQCIDPF156Gmo+gGwmV7sJjqZ/aA7xKnjBxUhn3S3rFI401AiBvOiCYK4VXaq/B5+1S1KteekbciXNs2YKJo60LBPETxyr2AwhjEAQaDDY2NTM4NjA5ODg2NiIM/eMd2cQ/wqZBR5p9KtMDwljCOZUhwElbldXEfD9M0i8xtWphdXfeeAGLnaNkpRMNw/XmuDHROUDbfGI9Jt3fzVrZKZ1YBQST6GLkZxpPbd8oWdWPEv1sCnnFJKC6WZC6hf3pCml0DfyVuMDBeGTQMbE2+Za9BD9hrCQyFeNcfv0Q31hwpXEu6ArHm0gQw2TPHm1JUw/m5XnuM5HecuxWeP8VQTPJ9hHsCsrOoM67ixEuPFlrC8OayhhzE9teoyLvJlqlz0pZpI7AcTfOVoITHFIEU6iAz1DbptFQIOu49NcB+4apXQOejx6tKgEYH98smQDLBffHwoCZf5cS6O8uIys4tS9dVW9P9LrNdH+iEJLKqvpoWLvGP5jnlpeFUVxzX/87YhZcB/r8SJXe/pYLg7HML/qeUN4ltc8Nob1t5mM7Ni89UfeHqnG1NnzMHAlq1DbrKPer5zeF0xejvQ5xS/g+cqBxsj4o6z8X9DBHh4XibePhhSkpooQ34AXye3n71W1DUg4WVmB9NJPKxN8BMtNTAsKbN91cN/WldtbrKeIl0jA4vNhdj56puFbr4VqdfzQwjXYHZqRXmIvmS5u3u86aWsJu8maI/JXlWRs0p8EZRYl18nKmT6ICxdgZx1VNkUowwZyY0AY6ngFgQMTWPFZjRZJobre9nbSNY82J3QR3J4Ofsgxto9eApKJxwQgHbQGzOx1SDjWJzo4R2CVAWd48Od4BbfE5pZWL7ZHwsZoCJA3vnGCY7dAYPN6Qxgf1YQiV3MeAFcFCUkvCJ5l+x2djwYyqZqQOiNgMjv2RXeGIQQbUYlzfJ8mi8oC5r1S69XWoJwfHW03tdjxcGhcin3rueNq7gj2wDg==",
+    "expiration": "2026-05-15T06:02:41.000Z"
+  },
+  "name": "layout-troca-itens-sankhya",
+  "path": "/home/ubuntu/layout-troca-itens-sankhya",
+  "port": 3000,
+  "secrets": {
+    "BUILT_IN_FORGE_API_KEY": "LviE69tcy9xwpuzKP8CtmB",
+    "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
+    "JWT_SECRET": "ECaAp75pqMRqXubgJqjS4Z",
+    "OAUTH_SERVER_URL": "https://api.manus.im",
+    "OWNER_NAME": "Bruno Rissi",
+    "OWNER_OPEN_ID": "XyZAbKN6Dh7eTLitsbTWQ6",
+    "VITE_ANALYTICS_ENDPOINT": "https://manus-analytics.com",
+    "VITE_ANALYTICS_WEBSITE_ID": "263b7875-6e35-4e7c-a541-23a8f8430951",
+    "VITE_APP_ID": "6mR3SndJj3RgbgEoKYmPe7",
+    "VITE_APP_LOGO": "",
+    "VITE_APP_TITLE": "Layouts Sugeridos - Troca de Itens Sankhya",
+    "VITE_FRONTEND_FORGE_API_KEY": "mLY3iv5ZBWWCbS7brXtmoP",
+    "VITE_FRONTEND_FORGE_API_URL": "https://forge.manus.ai",
+    "VITE_OAUTH_PORTAL_URL": "https://manus.im"
+  },
+  "template_id": "web-static",
+  "test_command": "pnpm test"
+}
