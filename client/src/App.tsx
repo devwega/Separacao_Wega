@@ -17,6 +17,9 @@ import PreFaturamento from "./pages/PreFaturamento";
 import Auditoria from "./pages/Auditoria";
 import Usuarios from "./pages/Usuarios";
 import ValidadeMinima from "./pages/ValidadeMinima";
+import ApanhoMobile from "./pages/ApanhoMobile";
+import ApanhoAcompanhamento from "./pages/ApanhoAcompanhamento";
+import ApanhoConferencia from "./pages/ApanhoConferencia";
 
 function Router() {
   return (
@@ -38,6 +41,9 @@ function Router() {
               <Route path="/auditoria" component={Auditoria} />
               <Route path="/usuarios" component={Usuarios} />
               <Route path="/validade-minima" component={ValidadeMinima} />
+              <Route path="/apanho-mobile" component={ApanhoMobile} />
+              <Route path="/apanho-acompanhamento" component={ApanhoAcompanhamento} />
+              <Route path="/apanho-conferencia" component={ApanhoConferencia} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />
             </Switch>

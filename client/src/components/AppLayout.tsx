@@ -4,7 +4,7 @@
 import { cn } from "@/lib/utils";
 import {
   Package, ScanBarcode, ArrowLeftRight, AlertTriangle, ShieldCheck,
-  FileCheck, History, ChevronLeft, ChevronRight, Users, LogOut, CalendarClock,
+  FileCheck, History, ChevronLeft, ChevronRight, Users, LogOut, CalendarClock, ShoppingCart, Activity, ClipboardCheck,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -15,6 +15,9 @@ const navItems = [
   { path: "/bipe", label: "BIPE Separação", icon: ScanBarcode },
   { path: "/divergencias", label: "Divergências e Trocas", icon: ArrowLeftRight },
   { path: "/faltas", label: "Faltas e Apanho", icon: AlertTriangle },
+  { path: "/apanho-mobile", label: "Apanho (campo)", icon: ShoppingCart },
+  { path: "/apanho-acompanhamento", label: "Apanho — Acompanhamento", icon: Activity },
+  { path: "/apanho-conferencia", label: "Conferência de Apanho", icon: ClipboardCheck },
   { path: "/fluxo-distinto", label: "Fluxo Distinto", icon: ShieldCheck },
   { path: "/pre-faturamento", label: "Pré-Faturamento", icon: FileCheck },
   { path: "/auditoria", label: "Auditoria", icon: History },

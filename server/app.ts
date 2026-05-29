@@ -10,6 +10,7 @@ import faltas from "./routes/faltas.js";
 import fluxoDistinto from "./routes/fluxo-distinto.js";
 import preFaturamento from "./routes/pre-faturamento.js";
 import validadeMinima from "./routes/validade.js";
+import apanho from "./routes/apanho.js";
 
 export function createApiApp() {
   const app = express();
@@ -87,6 +88,7 @@ export function createApiApp() {
   app.use("/api/fluxo-distinto", fluxoDistinto);
   app.use("/api/pre-faturamento", preFaturamento);
   app.use("/api/validade-minima", validadeMinima);
+  app.use("/api/apanho", apanho);
 
   // Middleware global de erro
   app.use((err: any, req: any, res: any, _next: any) => {

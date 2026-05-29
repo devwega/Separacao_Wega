@@ -238,4 +238,29 @@ router.get("/saldo/:codprod", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/bipagem/estornar-item  { nunota, sequencia }  (BS-12)
+ * Estorna a separacao de UM item: volta para pendente e recalcula o progresso.
+ */
+router.post("/estornar-item", async (req, res) => {
+  try {
+    const db = getDb();
+    const { nunota, sequencia } = req.body as any;
+    const r = await db.prepare(
+      "UPDATE TGFITE SET QTDENTREGUE=0, QTDCONFERIDA=0, PENDENTE='S', CONTROLE='', STATUSLOTE='A' WHERE NUNOTA=? AND SEQUENCIA=?",
+    ).run(nunota, sequencia);
+    if (r.changes === 0) { res.status(404).json({ error: "Item não encontrado" }); return; }
+    const prog = await db.prepare(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
+    ).get(nunota) as any;
+    const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
+    await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
+      .run(perc, perc === 0 ? "NAO_INICIADO" : (perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO"), nunota);
+    res.json({ ok: true, percProgresso: perc });
+  } catch (e: any) {
+    console.error("[estornar-item] ERRO:", e?.message);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
 export default router;

@@ -281,6 +281,23 @@ CREATE TABLE IF NOT EXISTS AD_VALIDADEMIN_HIST (
   CODUSU      INTEGER
 );
 
+-- ---------------------------------------------------------------------------
+-- AD_APANHO_REG — registros de apanho (Secao 9-11). Itens em falta com ACAO='APANHO'.
+-- Cada registro = qtd/lote/validade encontrados em campo; conferido na base.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS AD_APANHO_REG (
+  NUREG        INTEGER PRIMARY KEY AUTOINCREMENT,
+  NUFALTAITEM  INTEGER NOT NULL REFERENCES AD_FALTAITEM(NUFALTAITEM),
+  QTD          REAL NOT NULL,
+  LOTE         TEXT,
+  VALIDADE     TEXT,
+  DTREG        TEXT,
+  CODUSU       INTEGER,
+  CONFERIDO    INTEGER DEFAULT 0,
+  DTCONF       TEXT,
+  CODUSUCONF   INTEGER
+);
+
 -- Índices úteis
 CREATE INDEX IF NOT EXISTS idx_tgfite_nunota ON TGFITE(NUNOTA);
 CREATE INDEX IF NOT EXISTS idx_tgfest_codprod ON TGFEST(CODPROD);
