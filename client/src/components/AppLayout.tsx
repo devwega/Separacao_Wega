@@ -4,7 +4,7 @@
 import { cn } from "@/lib/utils";
 import {
   Package, ScanBarcode, ArrowLeftRight, AlertTriangle, ShieldCheck,
-  FileCheck, History, ChevronLeft, ChevronRight, Users, LogOut,
+  FileCheck, History, ChevronLeft, ChevronRight, Users, LogOut, CalendarClock,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -32,6 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const items = [...navItems];
   if (user && (user.perfil === "ADMINISTRADOR" || user.perfil === "GERENCIA")) {
+    items.push({ path: "/validade-minima", label: "Validade Mínima", icon: CalendarClock });
     items.push({ path: "/usuarios", label: "Usuários", icon: Users });
   }
   const currentNav = items.find((i) => i.path === location) || items[0];

@@ -252,6 +252,35 @@ CREATE TABLE IF NOT EXISTS AD_LOGIN (
   DTCRIACAO  TEXT
 );
 
+-- ---------------------------------------------------------------------------
+-- AD_PARAM — parametros gerais do BIPE (ex.: validade minima global). CV-05
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS AD_PARAM (
+  CHAVE       TEXT PRIMARY KEY,
+  VALOR       TEXT,
+  DTALTERACAO TEXT,
+  CODUSU      INTEGER REFERENCES TSIUSU(CODUSU)
+);
+
+-- ---------------------------------------------------------------------------
+-- AD_VALIDADEMIN — validade minima (dias) por parceiro. Secao 4 (CV-01..05).
+-- Especifico do BIPE, NAO replicado ao Sankhya (CV-02).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS AD_VALIDADEMIN (
+  CODPARC     INTEGER PRIMARY KEY REFERENCES TGFPAR(CODPARC),
+  DIASMIN     INTEGER NOT NULL,
+  DTALTERACAO TEXT,
+  CODUSU      INTEGER REFERENCES TSIUSU(CODUSU)
+);
+
+CREATE TABLE IF NOT EXISTS AD_VALIDADEMIN_HIST (
+  NUHIST      INTEGER PRIMARY KEY AUTOINCREMENT,
+  CODPARC     INTEGER NOT NULL,
+  DIASMIN     INTEGER NOT NULL,
+  DTALTERACAO TEXT,
+  CODUSU      INTEGER
+);
+
 -- Índices úteis
 CREATE INDEX IF NOT EXISTS idx_tgfite_nunota ON TGFITE(NUNOTA);
 CREATE INDEX IF NOT EXISTS idx_tgfest_codprod ON TGFEST(CODPROD);

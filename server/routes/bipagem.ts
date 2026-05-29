@@ -50,6 +50,17 @@ router.post("/validar-ean", async (req, res) => {
       }
     }
 
+    // RN-01: validade minima por parceiro (Secao 4). Fallback: padrao global / 30 dias.
+    const cabRow = await db.prepare(
+      "SELECT CAB.CODPARC AS codparc, V.DIASMIN AS diasMin FROM TGFITE I JOIN TGFCAB CAB ON CAB.NUNOTA=I.NUNOTA LEFT JOIN AD_VALIDADEMIN V ON V.CODPARC=CAB.CODPARC WHERE I.NUNOTA=? AND I.SEQUENCIA=?",
+    ).get(nunota, sequencia) as any;
+    let minParceiro = cabRow?.diasMin;
+    if (minParceiro == null) {
+      const g = await db.prepare("SELECT VALOR FROM AD_PARAM WHERE CHAVE='VALIDADE_MIN_GLOBAL'").get() as any;
+      minParceiro = g ? Number(g.VALOR) : 30;
+    }
+    const minExigido = Math.max(Number(item.PRAZOVAL ?? 0), Number(minParceiro ?? 0));
+
     const loteOk = item.CONTROLELOTE ? !!(lote && lote.trim()) : true;
 
     let validadeOk = true;
@@ -59,7 +70,7 @@ router.post("/validar-ean", async (req, res) => {
       const hoje = new Date();
       const diffDias = Math.ceil((dtVal.getTime() - hoje.getTime()) / 86400000);
       validadeOk = diffDias > 0;
-      shelfLifeOk = diffDias >= (item.PRAZOVAL ?? 0);
+      shelfLifeOk = diffDias >= minExigido;
     } else if (item.CONTROLELOTE) {
       validadeOk = false;
     }
@@ -75,7 +86,7 @@ router.post("/validar-ean", async (req, res) => {
         ? (outroProduto ? "EAN pertence a outro produto" : "EAN não encontrado")
         : !loteOk ? "Lote obrigatório para este produto"
         : !validadeOk ? "Validade obrigatória ou expirada"
-        : !shelfLifeOk ? `Shelf life insuficiente (mínimo ${item.PRAZOVAL} dias)`
+        : !shelfLifeOk ? `Validade insuficiente (mínimo ${minExigido} dias para este parceiro)`
         : null,
       flags: { eanOk, loteOk, validadeOk, equivalenciaOk, shelfLifeOk },
       item: { DESCRPROD: item.DESCRPROD, CODPROD: item.CODPROD, QTDNEG: item.QTDNEG, PRAZOVAL: item.PRAZOVAL },

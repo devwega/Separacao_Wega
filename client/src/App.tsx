@@ -16,6 +16,7 @@ import FluxoDistinto from "./pages/FluxoDistinto";
 import PreFaturamento from "./pages/PreFaturamento";
 import Auditoria from "./pages/Auditoria";
 import Usuarios from "./pages/Usuarios";
+import ValidadeMinima from "./pages/ValidadeMinima";
 
 function Router() {
   return (
@@ -36,6 +37,7 @@ function Router() {
               <Route path="/pre-faturamento" component={PreFaturamento} />
               <Route path="/auditoria" component={Auditoria} />
               <Route path="/usuarios" component={Usuarios} />
+              <Route path="/validade-minima" component={ValidadeMinima} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />
             </Switch>
