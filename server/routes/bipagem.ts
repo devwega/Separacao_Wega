@@ -189,6 +189,12 @@ router.put("/conferir", async (req, res) => {
       return;
     }
 
+    // AH-02: rejeita quantidade separada nula ou <= 0 (validação no servidor).
+    if (qtdSeparada == null || Number.isNaN(Number(qtdSeparada)) || Number(qtdSeparada) <= 0) {
+      res.status(400).json({ error: "qtdSeparada deve ser maior que zero" });
+      return;
+    }
+
     const pendente = qtdSeparada >= item.QTDNEG ? "N" : "S";
 
     await db.prepare(`

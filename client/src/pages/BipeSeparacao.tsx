@@ -186,7 +186,7 @@ export default function BipeSeparacao() {
     }
     conferir.mutate({
       nunota, sequencia: itemAtual.id,
-      qtdSeparada: Number(qtdSep) || itemAtual.qtdPedida,
+      qtdSeparada: Number(qtdSep),
       lote, validade,
     } as any);
   };
@@ -252,17 +252,33 @@ export default function BipeSeparacao() {
 
   // BS-07/BS-09: o botão único "Confirmar" decide a tratativa conforme a validação.
   const qtdPedidaAtual = itemAtual?.qtdPedida ?? 0;
-  const qtdSepNum = qtdSep === "" ? qtdPedidaAtual : Number(qtdSep);
+  // AH-02/AH-03: campo vazio => NaN (não assume mais a qtd pedida automaticamente).
+  const qtdSepNum = qtdSep.trim() === "" ? NaN : Number(qtdSep);
+  // RN-04 / AH-05: quantidade faltante calculada automaticamente (pedida - separada), nunca negativa.
+  const qtdFaltanteCalc = Number.isNaN(qtdSepNum) ? 0 : Math.max(0, qtdPedidaAtual - qtdSepNum);
+  const eanValidado = !!validacao;   // AH-01: exige bipagem/validação antes de confirmar
+  const eanOk = !!validacao && validacao.ok;
   const eanDivergente = !!validacao && !validacao.ok &&
     (validacao.flags?.eanOk === false || validacao.flags?.equivalenciaOk === false || !!validacao.outroProduto);
   const situacao: "conforme" | "divergencia" | "falta" =
     eanDivergente ? "divergencia"
-    : (qtdSepNum > 0 && qtdSepNum < qtdPedidaAtual ? "falta" : "conforme");
+    : (!Number.isNaN(qtdSepNum) && qtdSepNum > 0 && qtdSepNum < qtdPedidaAtual ? "falta" : "conforme");
   const onConfirmar = () => {
     if (!itemAtual) return;
+    // AH-01: divergência só é detectada se o EAN foi bipado/validado.
     if (situacao === "divergencia") { abrirDialogDivergencia(); return; }
+    // AH-01: bloqueia confirmar sem ter validado o EAN.
+    if (!eanValidado) { toast.error("Bipe e valide o EAN antes de confirmar."); return; }
+    if (!eanOk) { toast.error("Resolva os erros de validação antes de confirmar."); return; }
+    // AH-02/AH-03: quantidade obrigatória e maior que zero.
+    if (Number.isNaN(qtdSepNum)) { toast.error("Informe a quantidade separada."); return; }
+    if (qtdSepNum <= 0) { toast.error("A quantidade separada deve ser maior que zero."); return; }
+    // AH-04 / RN-09: excesso => alerta e permite seguir.
+    if (qtdSepNum > qtdPedidaAtual) {
+      toast.warning(`Quantidade separada (${qtdSepNum}) maior que a pedida (${qtdPedidaAtual}). Confira a contagem.`);
+    }
     if (situacao === "falta") {
-      setFaltaQtd(String(Math.max(1, qtdPedidaAtual - qtdSepNum))); // RN-04: calculada automaticamente
+      setFaltaQtd(String(qtdFaltanteCalc || 1)); // RN-04: calculada automaticamente
       setFaltaObs(""); setFaltaCrit("ALTA"); setFaltaOpen(true);
       return;
     }
@@ -502,7 +518,7 @@ export default function BipeSeparacao() {
                     </Label>
                     <Input
                       type="number"
-                      placeholder={String(itemAtual?.qtdPedida ?? 0)}
+                      placeholder="0"
                       className="h-9 text-sm"
                       value={qtdSep}
                       onChange={(e) => setQtdSep(e.target.value)}
@@ -515,10 +531,10 @@ export default function BipeSeparacao() {
                     </Label>
                     <Input
                       type="number"
-                      placeholder="0"
-                      className="h-9 text-sm"
-                      value={qtdFalt}
-                      onChange={(e) => setQtdFalt(e.target.value)}
+                      readOnly
+                      tabIndex={-1}
+                      className="h-9 text-sm bg-muted/50 cursor-not-allowed"
+                      value={qtdFaltanteCalc}
                     />
                   </div>
                 </div>
