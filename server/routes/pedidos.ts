@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getDb } from "../db/index.js";
+import { verifyPassword } from "../auth.js";
 
 /** RN-07: criticidade automatica pelo horario de carregamento (HH:MM). Criterio padrao. */
 function criticidade(horario?: string): "critica" | "alta" | "media" | "baixa" {
@@ -104,6 +105,13 @@ router.get("/", async (req, res) => {
           WHERE I.NUNOTA = CAB.NUNOTA
             AND E.DTVAL IS NOT NULL
             AND julianday(E.DTVAL) - julianday('now') < 30) AS alertaValidade,
+        (SELECT COUNT(DISTINCT COALESCE(NULLIF(TRIM(P2.LOCALIZACAO),''),'SEM LOCAL'))
+           FROM TGFITE I2 JOIN TGFPRO P2 ON I2.CODPROD=P2.CODPROD WHERE I2.NUNOTA=CAB.NUNOTA) AS totalLocais,
+        (SELECT COUNT(*) FROM (
+           SELECT COALESCE(NULLIF(TRIM(P3.LOCALIZACAO),''),'SEM LOCAL') AS loc,
+                  COUNT(*) AS tot, SUM(CASE WHEN I3.PENDENTE='N' THEN 1 ELSE 0 END) AS sep
+           FROM TGFITE I3 JOIN TGFPRO P3 ON I3.CODPROD=P3.CODPROD WHERE I3.NUNOTA=CAB.NUNOTA GROUP BY loc
+         ) WHERE sep = tot) AS locaisConcluidos,
         CAB.VLRNOTA  AS vlrNota,
         CAB.AD_PERCPROGRESSO AS percProgresso,
         (${STATUS_PEDIDO_SQL}) AS statusPedido
@@ -222,6 +230,7 @@ router.get("/:nunota", async (req, res) => {
       return;
     }
 
+    const localFiltro = req.query.local ? String(req.query.local) : null;
     const itens = await db.prepare(`
       SELECT
         I.SEQUENCIA AS id, I.CODPROD AS codprod, P.DESCRPROD AS descricao,
@@ -253,12 +262,14 @@ router.get("/:nunota", async (req, res) => {
           WHEN EXISTS(SELECT 1 FROM AD_FALTAITEM F WHERE F.NUNOTA=I.NUNOTA AND F.SEQUENCIA=I.SEQUENCIA AND F.STATUS IN ('PENDENTE','EM_TRATAMENTO')) THEN 'FALTA_AGUARDANDO_DEFINICAO'
           ELSE NULL
         END) AS tratativa,
-        I.VLRUNIT AS vlrUnit, I.VLRTOT AS vlrTot
+        I.VLRUNIT AS vlrUnit, I.VLRTOT AS vlrTot,
+        COALESCE(NULLIF(TRIM(P.LOCALIZACAO),''),'SEM LOCAL') AS local
       FROM TGFITE I
       JOIN TGFPRO P ON I.CODPROD = P.CODPROD
       WHERE I.NUNOTA = ?
+        AND (? IS NULL OR COALESCE(NULLIF(TRIM(P.LOCALIZACAO),''),'SEM LOCAL') = ?)
       ORDER BY I.SEQUENCIA
-    `).all(nunota);
+    `).all(nunota, localFiltro, localFiltro);
 
     res.json({ ...pedido, criticidade: criticidade((pedido as any).horarioCarregamento), itens });
   } catch (e: any) {
@@ -301,6 +312,109 @@ router.post("/:nunota/iniciar-separacao", async (req, res) => {
     res.json({ ok: true, nunota, status: "EM_ANDAMENTO" });
   } catch (e: any) {
     console.error("[iniciar-separacao] ERRO:", e?.message);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * GET /api/pedidos/:nunota/locais (PL-1.1/1.2)
+ * Locais a separar (definidos pelo cadastro do item — TGFPRO.LOCALIZACAO) com progresso por local.
+ */
+router.get("/:nunota/locais", async (req, res) => {
+  try {
+    const db = getDb();
+    const nunota = Number(req.params.nunota);
+    const rows = await db.prepare(`
+      SELECT COALESCE(NULLIF(TRIM(P.LOCALIZACAO),''),'SEM LOCAL') AS local,
+             COUNT(*) AS totalItens,
+             SUM(CASE WHEN I.PENDENTE='N' THEN 1 ELSE 0 END) AS itensSeparados
+      FROM TGFITE I JOIN TGFPRO P ON I.CODPROD = P.CODPROD
+      WHERE I.NUNOTA = ?
+      GROUP BY local
+      ORDER BY local
+    `).all(nunota) as any[];
+    rows.forEach((r) => {
+      r.concluido = r.totalItens > 0 && r.itensSeparados >= r.totalItens;
+      r.perc = r.totalItens ? Math.round((r.itensSeparados / r.totalItens) * 100) : 0;
+    });
+    res.json(rows);
+  } catch (e: any) {
+    console.error("[locais] ERRO:", e?.message);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * POST /api/pedidos/:nunota/iniciar-separacao-local (PL-1.1)
+ * Inicia/retoma a separacao de um local especifico, exigindo login+senha do separador.
+ */
+router.post("/:nunota/iniciar-separacao-local", async (req, res) => {
+  try {
+    const db = getDb();
+    const nunota = Number(req.params.nunota);
+    const { local, login, senha } = (req.body ?? {}) as { local?: string; login?: string; senha?: string };
+    if (!local) { res.status(400).json({ error: "Informe o local a separar" }); return; }
+    if (!login || !senha) { res.status(400).json({ error: "Informe login e senha" }); return; }
+
+    const cred = await db.prepare(
+      "SELECT CODUSU, SENHA, ATIVO FROM AD_LOGIN WHERE LOWER(LOGIN)=LOWER(?)",
+    ).get(login) as any;
+    if (!cred || !cred.ATIVO || !verifyPassword(senha, cred.SENHA)) {
+      res.status(401).json({ error: "Login ou senha invalidos" });
+      return;
+    }
+
+    const cab = await db.prepare("SELECT AD_STATUSSEP FROM TGFCAB WHERE NUNOTA=?").get(nunota) as any;
+    if (!cab) { res.status(404).json({ error: "Pedido nao encontrado" }); return; }
+
+    await db.prepare(`
+      UPDATE TGFCAB
+         SET AD_STATUSSEP = 'EM_ANDAMENTO',
+             AD_DTINICIOSEP = COALESCE(AD_DTINICIOSEP, datetime('now','localtime')),
+             AD_CODUSUSEP = ?
+       WHERE NUNOTA = ?
+    `).run(cred.CODUSU, nunota);
+    await db.prepare(`
+      INSERT OR REPLACE INTO AD_SEPARACAO (NUNOTA, STATUS, PERCPROGRESSO, CODUSU, DTINICIO)
+      VALUES (?, 'EM_ANDAMENTO',
+              COALESCE((SELECT PERCPROGRESSO FROM AD_SEPARACAO WHERE NUNOTA=?), 0),
+              ?,
+              COALESCE((SELECT DTINICIO FROM AD_SEPARACAO WHERE NUNOTA=?), datetime('now','localtime')))
+    `).run(nunota, nunota, cred.CODUSU, nunota);
+
+    res.json({ ok: true, nunota, local, codusu: cred.CODUSU });
+  } catch (e: any) {
+    console.error("[iniciar-separacao-local] ERRO:", e?.message);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * POST /api/pedidos/:nunota/finalizar-separacao (PL-1.3)
+ */
+router.post("/:nunota/finalizar-separacao", async (req, res) => {
+  try {
+    const db = getDb();
+    const nunota = Number(req.params.nunota);
+    const cab = await db.prepare("SELECT AD_STATUSSEP FROM TGFCAB WHERE NUNOTA=?").get(nunota) as any;
+    if (!cab) { res.status(404).json({ error: "Pedido nao encontrado" }); return; }
+    const prog = await db.prepare(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
+    ).get(nunota) as any;
+    const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
+    await db.prepare(
+      "UPDATE TGFCAB SET AD_STATUSSEP='CONCLUIDO', AD_PERCPROGRESSO=?, AD_DTFIMSEP=datetime('now','localtime') WHERE NUNOTA=?",
+    ).run(perc, nunota);
+    await db.prepare(`
+      INSERT OR REPLACE INTO AD_SEPARACAO (NUNOTA, STATUS, PERCPROGRESSO, CODUSU, DTINICIO, DTFIM)
+      VALUES (?, 'CONCLUIDO', ?,
+              COALESCE((SELECT CODUSU FROM AD_SEPARACAO WHERE NUNOTA=?), 1),
+              COALESCE((SELECT DTINICIO FROM AD_SEPARACAO WHERE NUNOTA=?), datetime('now','localtime')),
+              datetime('now','localtime'))
+    `).run(nunota, perc, nunota, nunota);
+    res.json({ ok: true, nunota, status: "CONCLUIDO", percProgresso: perc });
+  } catch (e: any) {
+    console.error("[finalizar-separacao] ERRO:", e?.message);
     res.status(500).json({ error: e?.message });
   }
 });

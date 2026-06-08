@@ -88,9 +88,14 @@ type ValidacaoResult = {
 
 export default function BipeSeparacao() {
   const search = useSearch();
-  const nunotaParam = new URLSearchParams(search).get("nunota");
+  const sp = new URLSearchParams(search);
+  const nunotaParam = sp.get("nunota");
   const nunota = nunotaParam ? Number(nunotaParam) : 187;
-  const { data: pedido, refetch } = useFetch<PedidoDetalhe>(`/pedidos/${nunota}`);
+  // BS-2.1: quando vem da Tela 1 com um local, mostra apenas os itens daquele local.
+  const localParam = sp.get("local") || undefined;
+  const { data: pedido, refetch } = useFetch<PedidoDetalhe>(
+    `/pedidos/${nunota}`, localParam ? { local: localParam } : undefined,
+  );
 
   const itens = useMemo(() => {
     const raw = (pedido?.itens && pedido.itens.length > 0 ? pedido.itens : mockItensFallback) as any[];
@@ -355,6 +360,11 @@ export default function BipeSeparacao() {
               </div>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {pedido?.cliente ?? "—"}
+                {localParam && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                    Local: {localParam}
+                  </span>
+                )}
               </p>
             </div>
             <Separator orientation="vertical" className="h-10" />
