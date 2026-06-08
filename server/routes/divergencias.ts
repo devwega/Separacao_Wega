@@ -36,7 +36,13 @@ router.get("/", async (req, res) => {
       PS.DESCRPROD  AS itemSeparado,
       ('PRD-' || printf('%06d', PS.CODPROD))  AS codSeparado,
       T.TIPODIVERG  AS tipoDivergencia,
-      T.HOMOLOGADA  AS homologada,
+      -- A tag "Homologada" deriva do TIPO DE DIVERGÊNCIA, não do checkbox redundante.
+      -- "Marca não homologada" => 0; "Marca homologada" => 1; demais tipos usam o valor armazenado.
+      CASE
+        WHEN LOWER(T.TIPODIVERG) LIKE '%não homologada%' OR LOWER(T.TIPODIVERG) LIKE '%nao homologada%' THEN 0
+        WHEN LOWER(T.TIPODIVERG) LIKE '%homologada%' THEN 1
+        ELSE T.HOMOLOGADA
+      END           AS homologada,
       T.NECESSIDADECLI AS necessidadeCliente,
       T.QTDORIG     AS qtdOriginal,
       T.QTDSUBST    AS qtdEquivalente,
@@ -76,8 +82,12 @@ router.get("/summary", async (_req, res) => {
   const r = await db.prepare(`
     SELECT
       COUNT(*) AS total,
-      SUM(CASE WHEN HOMOLOGADA=1 THEN 1 ELSE 0 END) AS homologadas,
-      SUM(CASE WHEN HOMOLOGADA=0 THEN 1 ELSE 0 END) AS naoHomologadas,
+      SUM(CASE WHEN (LOWER(TIPODIVERG) LIKE '%não homologada%' OR LOWER(TIPODIVERG) LIKE '%nao homologada%') THEN 0
+               WHEN LOWER(TIPODIVERG) LIKE '%homologada%' THEN 1
+               ELSE HOMOLOGADA END = 1 THEN 1 ELSE 0 END) AS homologadas,
+      SUM(CASE WHEN (LOWER(TIPODIVERG) LIKE '%não homologada%' OR LOWER(TIPODIVERG) LIKE '%nao homologada%') THEN 0
+               WHEN LOWER(TIPODIVERG) LIKE '%homologada%' THEN 1
+               ELSE HOMOLOGADA END = 0 THEN 1 ELSE 0 END) AS naoHomologadas,
       SUM(CASE WHEN TIPEQUIV='PROPORCIONAL' THEN 1 ELSE 0 END) AS porProporcao
     FROM AD_TROCAITEM
   `).get();
@@ -94,10 +104,18 @@ router.post("/:id/decidir", async (req, res) => {
   const novoStatus = acao === "APROVAR" ? "APROVADO" : "REJEITADO";
 
   const div = await db.prepare(
-    "SELECT NUNOTA, SEQUENCIA, CODPRODSUBST, QTDSUBST FROM AD_TROCAITEM WHERE NUTROCAITEM=?",
+    "SELECT NUNOTA, SEQUENCIA, CODPRODSUBST, QTDSUBST, STATUS FROM AD_TROCAITEM WHERE NUTROCAITEM=?",
   ).get(id) as any;
   if (!div) {
     res.status(404).json({ error: "Divergência não encontrada" });
+    return;
+  }
+  // RN: bloqueia ação dupla — só decide itens PENDENTES. Para refazer, estorne antes.
+  if (div.STATUS !== "PENDENTE") {
+    res.status(409).json({
+      error: "Item já tratado. Estorne a aprovação/encaminhamento anterior antes de uma nova ação.",
+      status: div.STATUS,
+    });
     return;
   }
 
@@ -108,13 +126,21 @@ router.post("/:id/decidir", async (req, res) => {
   `).run(novoStatus, codusu, id);
 
   // RN-06: ao APROVAR, substitui o item no pedido e devolve para separacao do substituto.
+  // Caso CORTE (QTDSUBST <= 0): item fica resolvido (PENDENTE='N'), sem travar o progresso,
+  // e a falta correspondente é baixada (FA-5.1).
   if (acao === "APROVAR") {
+    const ehCorte = !div.QTDSUBST || Number(div.QTDSUBST) <= 0;
     await db.prepare(`
       UPDATE TGFITE
          SET CODPROD = ?, QTDNEG = ?, QTDENTREGUE = 0, QTDCONFERIDA = 0,
-             PENDENTE = 'S', CONTROLE = '', STATUSLOTE = 'A'
+             PENDENTE = ?, CONTROLE = '', STATUSLOTE = 'A'
        WHERE NUNOTA = ? AND SEQUENCIA = ?
-    `).run(div.CODPRODSUBST, div.QTDSUBST, div.NUNOTA, div.SEQUENCIA);
+    `).run(div.CODPRODSUBST, div.QTDSUBST, ehCorte ? "N" : "S", div.NUNOTA, div.SEQUENCIA);
+    if (ehCorte) {
+      await db.prepare(
+        "UPDATE AD_FALTAITEM SET STATUS='RESOLVIDO', DTRESOLUCAO=datetime('now','localtime') WHERE NUNOTA=? AND SEQUENCIA=? AND ACAO='CORTE'",
+      ).run(div.NUNOTA, div.SEQUENCIA);
+    }
     const prog = await db.prepare(
       "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
     ).get(div.NUNOTA) as any;
@@ -175,11 +201,19 @@ router.post("/:id/encaminhar-gestor", async (req, res) => {
   const { codusu = 2 } = req.body ?? {};
 
   const div = await db.prepare(`
-    SELECT NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, MOTIVO, TIPODIVERG
+    SELECT NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, MOTIVO, TIPODIVERG, STATUS
     FROM AD_TROCAITEM WHERE NUTROCAITEM = ?
   `).get(id) as any;
   if (!div) {
     res.status(404).json({ error: "Divergência não encontrada" });
+    return;
+  }
+  // RN: só encaminha itens PENDENTES — evita encaminhar algo já aprovado/encaminhado.
+  if (div.STATUS !== "PENDENTE") {
+    res.status(409).json({
+      error: "Item já tratado. Estorne a ação anterior antes de encaminhar para o gestor.",
+      status: div.STATUS,
+    });
     return;
   }
 
@@ -206,4 +240,50 @@ router.post("/:id/encaminhar-gestor", async (req, res) => {
   res.json({ ok: true, nufluxodist: r.lastInsertRowid });
 });
 
-export default router;
+/**
+ * POST /api/divergencias/:id/estornar
+ * Reverte a última ação de aprovação/encaminhamento da divergência e devolve para PENDENTE.
+ * - Se estava APROVADO: desfaz a substituição no pedido (volta CODPROD/QTDNEG originais).
+ * - Se estava BLOQUEADO (encaminhado p/ gestor): remove o fluxo distinto pendente gerado.
+ */
+router.post("/:id/estornar", async (req, res) => {
+  const db = getDb();
+  const id = Number(req.params.id);
+
+  const div = await db.prepare(`
+    SELECT NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, QTDORIG, STATUS
+    FROM AD_TROCAITEM WHERE NUTROCAITEM = ?
+  `).get(id) as any;
+  if (!div) {
+    res.status(404).json({ error: "Divergência não encontrada" });
+    return;
+  }
+  if (div.STATUS === "PENDENTE") {
+    res.status(409).json({ error: "Não há ação para estornar — item já está pendente." });
+    return;
+  }
+
+  // Desfaz a substituição no item do pedido (se aprovado anteriormente).
+  if (div.STATUS === "APROVADO") {
+    await db.prepare(`
+      UPDATE TGFITE
+         SET CODPROD = ?, QTDNEG = ?, QTDENTREGUE = 0, QTDCONFERIDA = 0,
+             PENDENTE = 'S', CONTROLE = '', STATUSLOTE = 'A'
+       WHERE NUNOTA = ? AND SEQUENCIA = ?
+    `).run(div.CODPRODORIG, div.QTDORIG, div.NUNOTA, div.SEQUENCIA);
+
+    const prog = await db.prepare(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
+    ).get(div.NUNOTA) as any;
+    const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
+    await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
+      .run(perc, perc === 0 ? "NAO_INICIADO" : (perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO"), div.NUNOTA);
+  }
+
+  // Remove o fluxo distinto pendente gerado pelo encaminhamento (se houver).
+  const fluxos = await db.prepare(`
+    SELECT NUFLUXODIST FROM AD_FLUXODISTINTO
+     WHERE NUNOTA=? AND SEQUENCIA IS ? AND CODPRODFISICO=? AND STATUS='PENDENTE'
+  `).all(div.NUNOTA, div.SEQUENCIA, div.CODPRODSUBST) as any[];
+  for (const f of fluxos) {
+    await db.prepare("DELETE FROM AD_FLUXOHIST WHERE NUFLUXODIST=?").run(f.

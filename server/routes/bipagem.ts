@@ -124,6 +124,14 @@ router.post("/registrar-divergencia", async (req, res) => {
       return;
     }
 
+    // HOMOLOGADA deriva do TIPO de divergência (não de um checkbox redundante):
+    // "Marca não homologada" => 0; qualquer outro tipo com "homologada" => 1; demais => valor enviado.
+    const tipoDiv = b.tipoDivergencia ?? "Marca homologada";
+    const tipoLower = String(tipoDiv).toLowerCase();
+    const homologada = /n[ãa]o homologada/.test(tipoLower)
+      ? 0
+      : (tipoLower.includes("homologada") ? 1 : (b.homologada ? 1 : 0));
+
     const r = await db.prepare(`
       INSERT INTO AD_TROCAITEM
         (NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, QTDORIG, QTDSUBST,
@@ -133,7 +141,7 @@ router.post("/registrar-divergencia", async (req, res) => {
       b.nunota, b.sequencia, item.CODPROD, Number(b.codProdSubst),
       item.QTDNEG, b.qtdSubst ?? item.QTDNEG,
       b.tipoEquiv ?? "EXATA", b.fatorConv ?? 1, b.motivo ?? "",
-      b.homologada ? 1 : 0, b.necessidadeCliente ?? "Informar", b.tipoDivergencia ?? "Marca homologada",
+      homologada, b.necessidadeCliente ?? "Informar", tipoDiv,
     );
     res.json({ ok: true, nutrocaitem: r.lastInsertRowid });
   } catch (e: any) {
@@ -179,7 +187,10 @@ router.post("/registrar-falta", async (req, res) => {
 router.put("/conferir", async (req, res) => {
   try {
     const db = getDb();
-    const { nunota, sequencia, qtdSeparada, lote, validade } = req.body as any;
+    const { nunota, sequencia, qtdSeparada, lote, validade, lotes } = req.body as {
+      nunota: number; sequencia: number; qtdSeparada?: number; lote?: string; validade?: string;
+      lotes?: { lote?: string; validade?: string; qtd?: number }[];
+    };
 
     const item = await db.prepare(
       "SELECT QTDNEG, CODPROD FROM TGFITE WHERE NUNOTA=? AND SEQUENCIA=?",
@@ -189,19 +200,35 @@ router.put("/conferir", async (req, res) => {
       return;
     }
 
-    // AH-02: rejeita quantidade separada nula ou <= 0 (validação no servidor).
-    if (qtdSeparada == null || Number.isNaN(Number(qtdSeparada)) || Number(qtdSeparada) <= 0) {
-      res.status(400).json({ error: "qtdSeparada deve ser maior que zero" });
-      return;
-    }
+    // BS-2.6: múltiplos lotes/validade. Se vier `lotes`, a qtd separada é a soma e o
+    // CONTROLE principal do item passa a ser o primeiro lote informado.
+    const lotesValidos = Array.isArray(lotes)
+      ? lotes.filter((l) => (l?.qtd ?? 0) > 0 || (l?.lote && l.lote.trim()))
+      : [];
+    const usaMultiplos = lotesValidos.length > 0;
+    const qtdFinal = usaMultiplos
+      ? lotesValidos.reduce((s, l) => s + (Number(l.qtd) || 0), 0)
+      : Number(qtdSeparada);
+    const lotePrincipal = usaMultiplos ? (lotesValidos[0].lote || null) : (lote || null);
 
-    const pendente = qtdSeparada >= item.QTDNEG ? "N" : "S";
+    const pendente = qtdFinal >= item.QTDNEG ? "N" : "S";
 
     await db.prepare(`
       UPDATE TGFITE
          SET QTDENTREGUE = ?, QTDCONFERIDA = ?, CONTROLE = COALESCE(?, CONTROLE), PENDENTE = ?, STATUSLOTE='P'
        WHERE NUNOTA = ? AND SEQUENCIA = ?
-    `).run(qtdSeparada, qtdSeparada, lote || null, pendente, nunota, sequencia);
+    `).run(qtdFinal, qtdFinal, lotePrincipal, pendente, nunota, sequencia);
+
+    // Regrava os lotes do item (substitui os anteriores) em AD_ITEMLOTE.
+    await db.prepare("DELETE FROM AD_ITEMLOTE WHERE NUNOTA=? AND SEQUENCIA=? AND CODEMBARC IS NULL").run(nunota, sequencia);
+    const linhas = usaMultiplos
+      ? lotesValidos
+      : (lotePrincipal || validade ? [{ lote: lotePrincipal ?? undefined, validade, qtd: qtdFinal }] : []);
+    for (const l of linhas) {
+      await db.prepare(
+        "INSERT INTO AD_ITEMLOTE (NUNOTA, SEQUENCIA, LOTE, VALIDADE, QTD) VALUES (?, ?, ?, ?, ?)",
+      ).run(nunota, sequencia, l.lote || null, l.validade || null, Number(l.qtd) || 0);
+    }
 
     const prog = await db.prepare(`
       SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes
@@ -239,34 +266,4 @@ router.get("/saldo/:codprod", async (req, res) => {
     `).all(codprod);
     res.json(rows);
   } catch (e: any) {
-    console.error("[saldo] ERRO:", e?.message, e?.stack);
-    res.status(500).json({ error: e?.message });
-  }
-});
-
-/**
- * POST /api/bipagem/estornar-item  { nunota, sequencia }  (BS-12)
- * Estorna a separacao de UM item: volta para pendente e recalcula o progresso.
- */
-router.post("/estornar-item", async (req, res) => {
-  try {
-    const db = getDb();
-    const { nunota, sequencia } = req.body as any;
-    const r = await db.prepare(
-      "UPDATE TGFITE SET QTDENTREGUE=0, QTDCONFERIDA=0, PENDENTE='S', CONTROLE='', STATUSLOTE='A' WHERE NUNOTA=? AND SEQUENCIA=?",
-    ).run(nunota, sequencia);
-    if (r.changes === 0) { res.status(404).json({ error: "Item não encontrado" }); return; }
-    const prog = await db.prepare(
-      "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
-    ).get(nunota) as any;
-    const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
-    await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
-      .run(perc, perc === 0 ? "NAO_INICIADO" : (perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO"), nunota);
-    res.json({ ok: true, percProgresso: perc });
-  } catch (e: any) {
-    console.error("[estornar-item] ERRO:", e?.message);
-    res.status(500).json({ error: e?.message });
-  }
-});
-
-export default router;
+    console.error

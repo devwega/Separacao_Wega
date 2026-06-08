@@ -302,7 +302,23 @@ CREATE TABLE IF NOT EXISTS AD_APANHO_REG (
   NFFOTO       TEXT
 );
 
+-- ---------------------------------------------------------------------------
+-- AD_ITEMLOTE — múltiplos lotes/validade por item do pedido (BS-2.6 / apanho 6.4/7.4)
+-- Permite informar mais de um lote/validade para o mesmo item, somando as quantidades.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS AD_ITEMLOTE (
+  NUITEMLOTE  INTEGER PRIMARY KEY AUTOINCREMENT,
+  NUNOTA      INTEGER NOT NULL,
+  SEQUENCIA   INTEGER NOT NULL,
+  CODEMBARC   TEXT,                 -- embarcação/destino (apanho); NULL no bipe comum
+  LOTE        TEXT,
+  VALIDADE    TEXT,
+  QTD         REAL NOT NULL DEFAULT 0,
+  DTREG       TEXT DEFAULT (datetime('now','localtime'))
+);
+
 -- Índices úteis
+CREATE INDEX IF NOT EXISTS idx_itemlote ON AD_ITEMLOTE(NUNOTA, SEQUENCIA);
 CREATE INDEX IF NOT EXISTS idx_tgfite_nunota ON TGFITE(NUNOTA);
 CREATE INDEX IF NOT EXISTS idx_tgfest_codprod ON TGFEST(CODPROD);
 CREATE INDEX IF NOT EXISTS idx_tgfcab_status ON TGFCAB(STATUSNOTA);

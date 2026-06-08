@@ -32,6 +32,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Scale,
+  Undo2,
 } from "lucide-react";
 
 // Fallback caso a API esteja offline — corresponde ao seed do banco
@@ -130,7 +131,11 @@ export default function DivergenciasTrocas() {
   );
   const encaminharGestor = useMutation<{ _id: number; codusu: number }>(
     "post", (b) => `/divergencias/${b._id}/encaminhar-gestor`,
-    { successMessage: "Encaminhado para fluxo distinto", onSuccess: refetch },
+    { successMessage: "Encaminhado para fluxo distinto", onSuccess: () => { refetch(); refetchSummary(); } },
+  );
+  const estornar = useMutation<{ _id: number }>(
+    "post", (b) => `/divergencias/${b._id}/estornar`,
+    { successMessage: "Movimento estornado — item voltou para pendente", onSuccess: () => { refetch(); refetchSummary(); } },
   );
 
   return (
@@ -264,8 +269,8 @@ export default function DivergenciasTrocas() {
                 </div>
               )}
 
-              {/* Actions */}
-              {div.status !== "conforme" && (
+              {/* Actions — só liberadas enquanto PENDENTE. Após decisão, bloqueia e só permite estorno. */}
+              {div.status === "pendente" && (
                 <div className="mt-4 pt-4 border-t border-border flex items-center gap-2 flex-wrap">
                   <Button size="sm" className="gap-1.5 h-8" disabled={decidir.loading}
                     onClick={() => decidir.mutate({ acao: "APROVAR", _id: div.id } as any)}>
@@ -302,10 +307,25 @@ export default function DivergenciasTrocas() {
                   </Button>
                 </div>
               )}
-              {div.status === "conforme" && (
-                <div className="mt-4 pt-4 border-t border-border flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  <span className="text-sm text-emerald-700 font-medium">Troca aprovada pelo comercial</span>
+              {div.status !== "pendente" && (
+                <div className="mt-4 pt-4 border-t border-border flex items-center gap-2 flex-wrap">
+                  {div.status === "conforme" ? (
+                    <span className="flex items-center gap-2 text-sm text-emerald-700 font-medium">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      Troca aprovada — novas ações bloqueadas
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2 text-sm text-slate-600 font-medium">
+                      <Forward className="w-4 h-4 text-slate-500" />
+                      Item encaminhado/reprovado — novas ações bloqueadas
+                    </span>
+                  )}
+                  <Button variant="outline" size="sm" className="gap-1.5 h-8 ml-auto border-amber-300 text-amber-700 hover:bg-amber-50"
+                    disabled={estornar.loading}
+                    onClick={() => { if (confirm("Estornar este movimento e devolver o item para pendente?")) estornar.mutate({ _id: div.id }); }}>
+                    <Undo2 className="w-3.5 h-3.5" />
+                    Estornar Movimento
+                  </Button>
                 </div>
               )}
             </CardContent>

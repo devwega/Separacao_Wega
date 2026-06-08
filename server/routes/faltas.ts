@@ -106,17 +106,41 @@ router.post("/:id/acao", async (req, res) => {
   const id = Number(req.params.id);
   const { acao, prazoRetorno = null } = req.body as any;
 
-  const r = await db.prepare(`
+  const falta = await db.prepare(
+    "SELECT NUNOTA, SEQUENCIA, CODPROD, QTDFALTA FROM AD_FALTAITEM WHERE NUFALTAITEM = ?",
+  ).get(id) as any;
+  if (!falta) {
+    res.status(404).json({ error: "Falta não encontrada" });
+    return;
+  }
+
+  await db.prepare(`
     UPDATE AD_FALTAITEM
        SET ACAO = ?, STATUS = 'EM_TRATAMENTO', PRAZORETORNO = ?
      WHERE NUFALTAITEM = ?
   `).run(acao, prazoRetorno, id);
 
-  if (r.changes === 0) {
-    res.status(404).json({ error: "Falta não encontrada" });
-    return;
+  // FA-5.1: o CORTE não é definitivo aqui — vai para Divergências/Trocas para o comercial
+  // aprovar e efetuar o corte final do pedido. Criamos uma entrada de "corte" em AD_TROCAITEM
+  // (produto substituto = o próprio, qtd 0) reaproveitando o fluxo de aprovação/estorno.
+  if (acao === "CORTE") {
+    const jaExiste = await db.prepare(`
+      SELECT 1 FROM AD_TROCAITEM
+       WHERE NUNOTA=? AND SEQUENCIA=? AND TIPODIVERG='Corte' AND STATUS IN ('PENDENTE','BLOQUEADO')
+    `).get(falta.NUNOTA, falta.SEQUENCIA);
+    if (!jaExiste) {
+      await db.prepare(`
+        INSERT INTO AD_TROCAITEM
+          (NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, QTDORIG, QTDSUBST,
+           TIPEQUIV, FATORCONV, MOTIVO, STATUS, HOMOLOGADA, NECESSIDADECLI, TIPODIVERG)
+        VALUES (?, ?, ?, ?, ?, 0, 'EXATA', 1,
+                'Corte solicitado a partir de falta. Aprovação e corte final pelo comercial.',
+                'PENDENTE', 0, 'Aprovação obrigatória', 'Corte')
+      `).run(falta.NUNOTA, falta.SEQUENCIA, falta.CODPROD, falta.CODPROD, falta.QTDFALTA);
+    }
   }
-  res.json({ ok: true });
+
+  res.json({ ok: true, encaminhadoParaComercial: acao === "CORTE" });
 });
 
 /**
