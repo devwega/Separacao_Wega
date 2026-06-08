@@ -187,10 +187,7 @@ router.post("/registrar-falta", async (req, res) => {
 router.put("/conferir", async (req, res) => {
   try {
     const db = getDb();
-    const { nunota, sequencia, qtdSeparada, lote, validade, lotes } = req.body as {
-      nunota: number; sequencia: number; qtdSeparada?: number; lote?: string; validade?: string;
-      lotes?: { lote?: string; validade?: string; qtd?: number }[];
-    };
+    const { nunota, sequencia, qtdSeparada, lote, validade, lotes } = req.body as any;
 
     const item = await db.prepare(
       "SELECT QTDNEG, CODPROD FROM TGFITE WHERE NUNOTA=? AND SEQUENCIA=?",
@@ -209,8 +206,14 @@ router.put("/conferir", async (req, res) => {
     const qtdFinal = usaMultiplos
       ? lotesValidos.reduce((s, l) => s + (Number(l.qtd) || 0), 0)
       : Number(qtdSeparada);
-    const lotePrincipal = usaMultiplos ? (lotesValidos[0].lote || null) : (lote || null);
 
+    // AH-02: rejeita quantidade nula ou <= 0 (considerando a soma dos lotes).
+    if (qtdFinal == null || Number.isNaN(Number(qtdFinal)) || Number(qtdFinal) <= 0) {
+      res.status(400).json({ error: "qtdSeparada deve ser maior que zero" });
+      return;
+    }
+
+    const lotePrincipal = usaMultiplos ? (lotesValidos[0].lote || null) : (lote || null);
     const pendente = qtdFinal >= item.QTDNEG ? "N" : "S";
 
     await db.prepare(`
@@ -266,4 +269,34 @@ router.get("/saldo/:codprod", async (req, res) => {
     `).all(codprod);
     res.json(rows);
   } catch (e: any) {
-    console.error
+    console.error("[saldo] ERRO:", e?.message, e?.stack);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * POST /api/bipagem/estornar-item  { nunota, sequencia }  (BS-12)
+ * Estorna a separacao de UM item: volta para pendente e recalcula o progresso.
+ */
+router.post("/estornar-item", async (req, res) => {
+  try {
+    const db = getDb();
+    const { nunota, sequencia } = req.body as any;
+    const r = await db.prepare(
+      "UPDATE TGFITE SET QTDENTREGUE=0, QTDCONFERIDA=0, PENDENTE='S', CONTROLE='', STATUSLOTE='A' WHERE NUNOTA=? AND SEQUENCIA=?",
+    ).run(nunota, sequencia);
+    if (r.changes === 0) { res.status(404).json({ error: "Item não encontrado" }); return; }
+    const prog = await db.prepare(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
+    ).get(nunota) as any;
+    const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
+    await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
+      .run(perc, perc === 0 ? "NAO_INICIADO" : (perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO"), nunota);
+    res.json({ ok: true, percProgresso: perc });
+  } catch (e: any) {
+    console.error("[estornar-item] ERRO:", e?.message);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+export default router;

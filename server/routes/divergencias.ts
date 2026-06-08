@@ -243,8 +243,6 @@ router.post("/:id/encaminhar-gestor", async (req, res) => {
 /**
  * POST /api/divergencias/:id/estornar
  * Reverte a última ação de aprovação/encaminhamento da divergência e devolve para PENDENTE.
- * - Se estava APROVADO: desfaz a substituição no pedido (volta CODPROD/QTDNEG originais).
- * - Se estava BLOQUEADO (encaminhado p/ gestor): remove o fluxo distinto pendente gerado.
  */
 router.post("/:id/estornar", async (req, res) => {
   const db = getDb();
@@ -263,7 +261,6 @@ router.post("/:id/estornar", async (req, res) => {
     return;
   }
 
-  // Desfaz a substituição no item do pedido (se aprovado anteriormente).
   if (div.STATUS === "APROVADO") {
     await db.prepare(`
       UPDATE TGFITE
@@ -280,10 +277,23 @@ router.post("/:id/estornar", async (req, res) => {
       .run(perc, perc === 0 ? "NAO_INICIADO" : (perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO"), div.NUNOTA);
   }
 
-  // Remove o fluxo distinto pendente gerado pelo encaminhamento (se houver).
   const fluxos = await db.prepare(`
     SELECT NUFLUXODIST FROM AD_FLUXODISTINTO
      WHERE NUNOTA=? AND SEQUENCIA IS ? AND CODPRODFISICO=? AND STATUS='PENDENTE'
   `).all(div.NUNOTA, div.SEQUENCIA, div.CODPRODSUBST) as any[];
   for (const f of fluxos) {
-    await db.prepare("DELETE FROM AD_FLUXOHIST WHERE NUFLUXODIST=?").run(f.
+    await db.prepare("DELETE FROM AD_FLUXOHIST WHERE NUFLUXODIST=?").run(f.NUFLUXODIST);
+    await db.prepare("DELETE FROM AD_FLUXODISTINTO WHERE NUFLUXODIST=?").run(f.NUFLUXODIST);
+  }
+
+  await db.prepare(`
+    UPDATE AD_TROCAITEM
+       SET STATUS='PENDENTE', CODUSUAPROV=NULL, DTAPROV=NULL,
+           MOTIVO = COALESCE(MOTIVO,'') || ' | [ESTORNO em ' || datetime('now','localtime') || ']'
+     WHERE NUTROCAITEM = ?
+  `).run(id);
+
+  res.json({ ok: true, estornado: true, statusAnterior: div.STATUS });
+});
+
+export default router;

@@ -58,8 +58,7 @@ const mockItensFallback = [
   { id: 6, codigo: "PRD-001612", codprod: 1612, descricao: "Mortadela Bologna 3,5kg", eanEsperado: "7891234567895", qtdPedida: 10, qtdSeparada: 0, status: "pendente" as const },
 ];
 
-// BS-2.4 / FA-5.2: rótulo e cor das tags de tratativa por item, para o separador
-// saber em que passo o item está e que ele já foi tratado.
+// BS-2.4 / FA-5.2: rótulo e cor das tags de tratativa por item.
 const TRATATIVA_INFO: Record<string, { label: string; cls: string }> = {
   EM_TRATATIVA_DIVERGENCIA:   { label: "Em tratativa de divergência", cls: "bg-amber-100 text-amber-800 border-amber-200" },
   DIVERGENCIA_ENCAMINHADA:    { label: "Encaminhado ao gestor",        cls: "bg-violet-100 text-violet-800 border-violet-200" },
@@ -73,8 +72,6 @@ const TRATATIVA_INFO: Record<string, { label: string; cls: string }> = {
   AGUARDANDO_CORTE_COMERCIAL: { label: "Aguardando corte (comercial)", cls: "bg-rose-100 text-rose-800 border-rose-200" },
   FALTA_RESOLVIDA:            { label: "Falta resolvida",              cls: "bg-emerald-100 text-emerald-800 border-emerald-200" },
 };
-
-// Tratativas "em aberto" que bloqueiam nova ação no item até estorno (BS-2.4).
 const TRATATIVA_BLOQUEIA = new Set([
   "EM_TRATATIVA_DIVERGENCIA", "DIVERGENCIA_ENCAMINHADA", "FLUXO_DISTINTO_PENDENTE",
   "FALTA_AGUARDANDO_DEFINICAO", "EM_APANHO", "COMPRA_PADRAO", "AGUARDANDO_CORTE_COMERCIAL",
@@ -138,7 +135,6 @@ export default function BipeSeparacao() {
   const [qtdSep, setQtdSep] = useState<string>("");
   const [qtdFalt, setQtdFalt] = useState<string>("");
   const [validacao, setValidacao] = useState<ValidacaoResult | null>(null);
-  // BS-2.6: lotes/validade adicionais (o primeiro lote são os campos lote/validade/qtdSep acima)
   const [lotesExtra, setLotesExtra] = useState<{ lote: string; validade: string; qtd: string }[]>([]);
 
   // Reset campos ao trocar de item
@@ -167,7 +163,6 @@ export default function BipeSeparacao() {
   const [divMotivo, setDivMotivo] = useState("");
   const [divTipo, setDivTipo] = useState("Marca homologada");
   const [divNecessidadeCli, setDivNecessidadeCli] = useState("Informar");
-  // Produto identificado pelo EAN bipado (para conferência do separador no modal)
   const [divProdBipado, setDivProdBipado] = useState<{ codprod: number; nome: string; ean: string } | null>(null);
 
   // Dialog state — Falta
@@ -212,7 +207,7 @@ export default function BipeSeparacao() {
       toast.error("Resolva os erros de validação antes de confirmar.");
       return;
     }
-    const qtdPrincipal = Number(qtdSep) || itemAtual.qtdPedida;
+    const qtdPrincipal = Number(qtdSep);
     // BS-2.6: se há lotes adicionais, envia o array completo (backend soma as quantidades).
     const lotesPayload = lotesExtra.length > 0
       ? [{ lote, validade, qtd: qtdPrincipal },
@@ -228,7 +223,6 @@ export default function BipeSeparacao() {
     if (!itemAtual) return;
     setDivQtd(qtdSep || String(itemAtual.qtdPedida));
     setDivMotivo("Produto original sem estoque");
-    // Auto-preenche o código do substituto a partir do EAN bipado/digitado (produto identificado pela validação)
     const bipado = validacao?.outroProduto;
     setDivCodSubst(bipado?.CODPROD ? String(bipado.CODPROD) : "");
     setDivProdBipado(bipado ? { codprod: bipado.CODPROD, nome: bipado.DESCRPROD, ean } : null);
@@ -247,15 +241,13 @@ export default function BipeSeparacao() {
       toast.error("Motivo é obrigatório.");
       return;
     }
-    // homologada deriva do tipo (não há mais checkbox redundante)
-    const homologadaDerivada = !/n[ãa]o homologada/i.test(divTipo);
     registrarDivergencia.mutate({
       nunota, sequencia: itemAtual.id,
       codProdSubst: codSubst,
       qtdSubst: Number(divQtd) || itemAtual.qtdPedida,
       tipoEquiv: divTipo === "Proporção/Porcionamento" ? "PROPORCIONAL" : "EXATA",
       motivo: divMotivo.trim(),
-      homologada: homologadaDerivada,
+      homologada: !/n[ãa]o homologada/i.test(divTipo),
       necessidadeCliente: divNecessidadeCli,
       tipoDivergencia: divTipo,
     } as any);
@@ -290,26 +282,44 @@ export default function BipeSeparacao() {
 
   // BS-07/BS-09: o botão único "Confirmar" decide a tratativa conforme a validação.
   const qtdPedidaAtual = itemAtual?.qtdPedida ?? 0;
-  const qtdSepNum = qtdSep === "" ? qtdPedidaAtual : Number(qtdSep);
+  // AH-02/AH-03: campo vazio => NaN (não assume mais a qtd pedida automaticamente).
+  const qtdSepNum = qtdSep.trim() === "" ? NaN : Number(qtdSep);
+  // RN-04 / AH-05: quantidade faltante calculada automaticamente (pedida - separada), nunca negativa.
+  const qtdFaltanteCalc = Number.isNaN(qtdSepNum) ? 0 : Math.max(0, qtdPedidaAtual - qtdSepNum);
+  const eanValidado = !!validacao;   // AH-01: exige bipagem/validação antes de confirmar
+  const eanOk = !!validacao && validacao.ok;
   const eanDivergente = !!validacao && !validacao.ok &&
     (validacao.flags?.eanOk === false || validacao.flags?.equivalenciaOk === false || !!validacao.outroProduto);
-  // BS-2.5: enquanto nada foi bipado/informado, o Confirmar age como "registrar falta"
-  // sem trava de validação (pode não haver nada em estoque para preencher EAN/lote/validade).
-  const nadaInformado = !validacao && !ean.trim() && (qtdSep === "" || Number(qtdSep) === 0);
+  // BS-2.5: enquanto nada foi bipado/informado, o Confirmar age como "registrar falta" sem trava.
+  const nadaInformado = !validacao && !ean.trim() && (qtdSep.trim() === "" || Number(qtdSep) === 0);
   const situacao: "conforme" | "divergencia" | "falta" =
     nadaInformado ? "falta"
     : eanDivergente ? "divergencia"
-    : (qtdSepNum > 0 && qtdSepNum < qtdPedidaAtual ? "falta" : "conforme");
+    : (!Number.isNaN(qtdSepNum) && qtdSepNum > 0 && qtdSepNum < qtdPedidaAtual ? "falta" : "conforme");
   // BS-2.4: item com tratativa em aberto fica travado para nova ação (até estorno).
   const tratativaAtual = (itemAtual as any)?.tratativa as string | null;
   const tratativaBloqueia = !!tratativaAtual && TRATATIVA_BLOQUEIA.has(tratativaAtual);
   const onConfirmar = () => {
     if (!itemAtual) return;
+    if (nadaInformado) {
+      // BS-2.5: sem nada bipado/estoque — registrar falta direto (qtd pedida), sem trava.
+      setFaltaQtd(String(qtdPedidaAtual)); setFaltaObs(""); setFaltaCrit("ALTA"); setFaltaOpen(true);
+      return;
+    }
+    // AH-01: divergência só é detectada se o EAN foi bipado/validado.
     if (situacao === "divergencia") { abrirDialogDivergencia(); return; }
+    // AH-01: bloqueia confirmar sem ter validado o EAN.
+    if (!eanValidado) { toast.error("Bipe e valide o EAN antes de confirmar."); return; }
+    if (!eanOk) { toast.error("Resolva os erros de validação antes de confirmar."); return; }
+    // AH-02/AH-03: quantidade obrigatória e maior que zero.
+    if (Number.isNaN(qtdSepNum)) { toast.error("Informe a quantidade separada."); return; }
+    if (qtdSepNum <= 0) { toast.error("A quantidade separada deve ser maior que zero."); return; }
+    // AH-04 / RN-09: excesso => alerta e permite seguir.
+    if (qtdSepNum > qtdPedidaAtual) {
+      toast.warning(`Quantidade separada (${qtdSepNum}) maior que a pedida (${qtdPedidaAtual}). Confira a contagem.`);
+    }
     if (situacao === "falta") {
-      // RN-04: qtd faltante automática. Se nada foi informado, falta = quantidade pedida inteira.
-      const faltante = nadaInformado ? qtdPedidaAtual : Math.max(1, qtdPedidaAtual - qtdSepNum);
-      setFaltaQtd(String(faltante));
+      setFaltaQtd(String(qtdFaltanteCalc || 1)); // RN-04: calculada automaticamente
       setFaltaObs(""); setFaltaCrit("ALTA"); setFaltaOpen(true);
       return;
     }
@@ -421,10 +431,7 @@ export default function BipeSeparacao() {
                           <span className="text-[10px] px-1.5 py-0 rounded-full bg-red-100 text-red-700 border border-red-200">FALTA</span>
                         )}
                         {(item as any).tratativa && TRATATIVA_INFO[(item as any).tratativa] && (
-                          <span className={cn(
-                            "text-[10px] px-1.5 py-0.5 rounded-full border",
-                            TRATATIVA_INFO[(item as any).tratativa].cls,
-                          )}>
+                          <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full border", TRATATIVA_INFO[(item as any).tratativa].cls)}>
                             {TRATATIVA_INFO[(item as any).tratativa].label}
                           </span>
                         )}
@@ -530,12 +537,9 @@ export default function BipeSeparacao() {
                     <Label className="text-xs text-muted-foreground flex items-center gap-1 mb-1.5">
                       <Layers className="w-3 h-3" />
                       Lote
-                      <button
-                        type="button"
-                        title="Adicionar outro lote/validade"
+                      <button type="button" title="Adicionar outro lote/validade"
                         onClick={() => setLotesExtra((prev) => [...prev, { lote: "", validade: "", qtd: "" }])}
-                        className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary/10 text-primary hover:bg-primary/20"
-                      >
+                        className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary/10 text-primary hover:bg-primary/20">
                         <Plus className="w-3 h-3" />
                       </button>
                     </Label>
@@ -565,7 +569,7 @@ export default function BipeSeparacao() {
                     </Label>
                     <Input
                       type="number"
-                      placeholder={String(itemAtual?.qtdPedida ?? 0)}
+                      placeholder="0"
                       className="h-9 text-sm"
                       value={qtdSep}
                       onChange={(e) => setQtdSep(e.target.value)}
@@ -578,53 +582,35 @@ export default function BipeSeparacao() {
                     </Label>
                     <Input
                       type="number"
-                      placeholder="0"
-                      className="h-9 text-sm"
-                      value={qtdFalt}
-                      onChange={(e) => setQtdFalt(e.target.value)}
+                      readOnly
+                      tabIndex={-1}
+                      className="h-9 text-sm bg-muted/50 cursor-not-allowed"
+                      value={qtdFaltanteCalc}
                     />
                   </div>
                 </div>
 
-                {/* BS-2.6: lotes/validade adicionais */}
                 {lotesExtra.map((l, idx) => (
                   <div key={idx} className="grid grid-cols-12 gap-2 items-end bg-muted/30 rounded-lg p-2">
                     <div className="col-span-4">
-                      <Label className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1">
-                        <Layers className="w-3 h-3" /> Lote {idx + 2}
-                      </Label>
-                      <Input
-                        placeholder="Nº do lote" className="h-9 text-sm"
-                        value={l.lote}
-                        onChange={(e) => setLotesExtra((p) => p.map((x, i) => i === idx ? { ...x, lote: e.target.value } : x))}
-                      />
+                      <Label className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1"><Layers className="w-3 h-3" /> Lote {idx + 2}</Label>
+                      <Input placeholder="Nº do lote" className="h-9 text-sm" value={l.lote}
+                        onChange={(e) => setLotesExtra((p) => p.map((x, i) => i === idx ? { ...x, lote: e.target.value } : x))} />
                     </div>
                     <div className="col-span-4">
-                      <Label className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1">
-                        <Calendar className="w-3 h-3" /> Validade
-                      </Label>
-                      <Input
-                        type="date" className="h-9 text-sm"
-                        value={l.validade}
-                        onChange={(e) => setLotesExtra((p) => p.map((x, i) => i === idx ? { ...x, validade: e.target.value } : x))}
-                      />
+                      <Label className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1"><Calendar className="w-3 h-3" /> Validade</Label>
+                      <Input type="date" className="h-9 text-sm" value={l.validade}
+                        onChange={(e) => setLotesExtra((p) => p.map((x, i) => i === idx ? { ...x, validade: e.target.value } : x))} />
                     </div>
                     <div className="col-span-3">
-                      <Label className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1">
-                        <Package className="w-3 h-3" /> Qtd
-                      </Label>
-                      <Input
-                        type="number" placeholder="0" className="h-9 text-sm"
-                        value={l.qtd}
-                        onChange={(e) => setLotesExtra((p) => p.map((x, i) => i === idx ? { ...x, qtd: e.target.value } : x))}
-                      />
+                      <Label className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1"><Package className="w-3 h-3" /> Qtd</Label>
+                      <Input type="number" placeholder="0" className="h-9 text-sm" value={l.qtd}
+                        onChange={(e) => setLotesExtra((p) => p.map((x, i) => i === idx ? { ...x, qtd: e.target.value } : x))} />
                     </div>
                     <div className="col-span-1 flex justify-center pb-1">
-                      <button
-                        type="button" title="Remover lote"
+                      <button type="button" title="Remover lote"
                         onClick={() => setLotesExtra((p) => p.filter((_, i) => i !== idx))}
-                        className="inline-flex items-center justify-center w-7 h-7 rounded-md text-red-600 hover:bg-red-50"
-                      >
+                        className="inline-flex items-center justify-center w-7 h-7 rounded-md text-red-600 hover:bg-red-50">
                         <XCircle className="w-4 h-4" />
                       </button>
                     </div>
@@ -740,7 +726,6 @@ export default function BipeSeparacao() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {/* Produto identificado pelo EAN bipado — conferência do separador */}
             {divProdBipado && (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
                 <p className="text-[10px] font-medium text-emerald-700 uppercase tracking-wide">Produto bipado (EAN {divProdBipado.ean})</p>
@@ -758,4 +743,109 @@ export default function BipeSeparacao() {
                   inputMode="numeric"
                   className="h-9"
                 />
-                <p className="text-[10px] text-muted-foreground mt-1">Pr
+                <p className="text-[10px] text-muted-foreground mt-1">Preenchido automaticamente pelo EAN bipado.</p>
+              </div>
+              <div>
+                <Label className="text-xs">Quantidade equivalente</Label>
+                <Input
+                  type="number"
+                  value={divQtd}
+                  onChange={(e) => setDivQtd(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Tipo de divergência</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={divTipo}
+                onChange={(e) => setDivTipo(e.target.value)}
+              >
+                <option>Marca homologada</option>
+                <option>Marca não homologada</option>
+                <option>Proporção/Porcionamento</option>
+                <option>Gramatura</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">Motivo *</Label>
+              <Textarea
+                value={divMotivo}
+                onChange={(e) => setDivMotivo(e.target.value)}
+                placeholder="Descreva o motivo da divergência..."
+                className="min-h-[80px]"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDivOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmarDivergencia} disabled={registrarDivergencia.loading}>
+              Registrar Divergência
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog — Falta */}
+      <Dialog open={faltaOpen} onOpenChange={setFaltaOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="w-5 h-5 text-red-600" />
+              Registrar Falta
+            </DialogTitle>
+            <DialogDescription>
+              Item: {itemAtual?.descricao ?? "—"} (qtd pedida: {itemAtual?.qtdPedida ?? 0})
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Quantidade faltante (automática)</Label>
+                <Input
+                  type="number"
+                  value={faltaQtd}
+                  readOnly
+                  className="h-9 bg-muted cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Criticidade</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                  value={faltaCrit}
+                  onChange={(e) => setFaltaCrit(e.target.value as any)}
+                >
+                  <option value="CRITICA">Crítica</option>
+                  <option value="ALTA">Alta</option>
+                  <option value="MEDIA">Média</option>
+                  <option value="BAIXA">Baixa</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Observação</Label>
+              <Textarea
+                value={faltaObs}
+                onChange={(e) => setFaltaObs(e.target.value)}
+                placeholder="Observação opcional..."
+                className="min-h-[60px]"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFaltaOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmarFalta} disabled={registrarFalta.loading} className="bg-red-600 hover:bg-red-700">
+              Registrar Falta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
