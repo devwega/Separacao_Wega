@@ -99,6 +99,7 @@ async function runMigrations(): Promise<void> {
     "ALTER TABLE AD_APANHO_REG ADD COLUMN LNG REAL",
     "ALTER TABLE AD_APANHO_REG ADD COLUMN NFCHAVE TEXT",
     "ALTER TABLE AD_APANHO_REG ADD COLUMN NFFOTO TEXT",
+    "ALTER TABLE AD_APANHO_REG ADD COLUMN NUSESSAO INTEGER",
   ];
   for (const a of alters) {
     try { await c.execute(a); } catch { /* coluna ja existe */ }

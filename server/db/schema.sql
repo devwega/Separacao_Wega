@@ -338,6 +338,23 @@ CREATE TABLE IF NOT EXISTS AD_FLUXOREMESSA (
   CODUSU      INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_fluxoremessa ON AD_FLUXOREMESSA(NUFLUXODIST);
+
+-- ---------------------------------------------------------------------------
+-- AD_APANHO_SESSAO — sessao de apanho do comprador em campo (Secao 5/6)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS AD_APANHO_SESSAO (
+  NUSESSAO   INTEGER PRIMARY KEY AUTOINCREMENT,
+  CODUSU     INTEGER,
+  COMPRADOR  TEXT,
+  MERCADO    TEXT,
+  STATUS     TEXT DEFAULT 'ABERTA',
+  LAT        REAL,
+  LNG        REAL,
+  DTINICIO   TEXT DEFAULT (datetime('now','localtime')),
+  DTALTERLOC TEXT,
+  DTFIM      TEXT,
+  NFCHAVE    TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_tgfite_nunota ON TGFITE(NUNOTA);
 CREATE INDEX IF NOT EXISTS idx_tgfest_codprod ON TGFEST(CODPROD);
 CREATE INDEX IF NOT EXISTS idx_tgfcab_status ON TGFCAB(STATUSNOTA);
