@@ -8,6 +8,10 @@ import { hashPassword } from "../auth.js";
 import type { InStatement } from "@libsql/client";
 import { LOCAIS, PRODUTOS, BARRAS, ITENS_DEMO } from "./catalogo.js";
 
+// Versao do seed/catalogo. Ao mudar, o app recarrega o catalogo automaticamente
+// no proximo boot (ensureReady), sem necessidade de reseed manual.
+export const SEED_VERSION = "2026-06-08-catalogo-real-ean-v1";
+
 export async function seedDemoStatusVariants() {
   // no-op — baseline limpo.
 }

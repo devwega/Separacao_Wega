@@ -113,8 +113,24 @@ export function ensureReady(): Promise<void> {
     _ready = (async () => {
       await applySchema();
       await runMigrations();
-      const { seed } = await import("./seed.js");
-      await seed();
+      const c = getClient();
+      let storedVer: string | null = null;
+      try {
+        const r = await c.execute("SELECT VALOR FROM AD_PARAM WHERE CHAVE='SEED_VERSION'");
+        storedVer = (r.rows[0] as any)?.VALOR ?? null;
+      } catch { /* AD_PARAM pode nao existir ainda */ }
+      const { seed, SEED_VERSION } = await import("./seed.js");
+      if (storedVer !== SEED_VERSION) {
+        // versao do catalogo mudou -> recarrega tudo automaticamente
+        console.log(`[seed] versao ${storedVer} -> ${SEED_VERSION}: recarregando catalogo`);
+        await seed({ reset: true });
+        await c.execute({
+          sql: "INSERT OR REPLACE INTO AD_PARAM (CHAVE, VALOR, DTALTERACAO) VALUES ('SEED_VERSION', ?, datetime('now','localtime'))",
+          args: [SEED_VERSION],
+        });
+      } else {
+        await seed();
+      }
       // Garante o usuario admin mesmo quando o banco ja estava populado (seed pula).
       await ensureAdmin();
     })().catch((e) => {
@@ -140,6 +156,7 @@ export async function ensureAdmin(): Promise<void> {
 export async function resetDb(): Promise<void> {
   const c = getClient();
   const tables = [
+    "AD_APANHO_REG", "AD_APANHO_SESSAO", "AD_FLUXOREMESSA", "AD_ITEMLOTE",
     "AD_FLUXOHIST", "AD_FLUXODISTINTO", "AD_FALTAITEM", "AD_TROCAITEM", "AD_SEPARACAO",
     "TGFITE", "TGFCAB", "TGFORD", "TGFTOP", "TGFVEN", "TGFPAR", "TGFEST", "TGFLOC",
     "TGFBAR", "TGFPRO", "TGFGRU", "TSIUSU",
