@@ -148,8 +148,12 @@ router.get("/agrupado", async (req, res) => {
     FROM AD_FALTAITEM F JOIN TGFCAB CAB ON F.NUNOTA=CAB.NUNOTA JOIN TGFPAR PAR ON CAB.CODPARC=PAR.CODPARC
     WHERE F.ACAO='APANHO' AND F.STATUS <> 'RESOLVIDO' AND F.CODPROD=? ORDER BY CAB.ORDEMCARGA
   `);
+  const lotesStmt = db.prepare(
+    "SELECT LOTE AS lote, VALIDADE AS validade, QTD AS qtd FROM AD_APANHO_REG WHERE NUFALTAITEM=? ORDER BY NUREG",
+  );
   for (const p of prods) {
-    p.embarcacoes = await brkStmt.all(p.codprod);
+    p.embarcacoes = await brkStmt.all(p.codprod) as any[];
+    for (const e of p.embarcacoes as any[]) e.lotes = await lotesStmt.all(e.nufaltaitem);
     p.qtdEncontradaTotal = (p.embarcacoes as any[]).reduce((a, e) => a + Number(e.qtdEncontrada || 0), 0);
     p.qtdPendenteTotal = Math.max(0, Number(p.qtdFaltaTotal) - p.qtdEncontradaTotal);
   }
