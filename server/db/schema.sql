@@ -319,6 +319,25 @@ CREATE TABLE IF NOT EXISTS AD_ITEMLOTE (
 
 -- Índices úteis
 CREATE INDEX IF NOT EXISTS idx_itemlote ON AD_ITEMLOTE(NUNOTA, SEQUENCIA);
+
+-- ---------------------------------------------------------------------------
+-- AD_FLUXOREMESSA — bipagem das 2 remessas do fluxo distinto (BS-2.2)
+-- ENTRADA = item do pedido/NF (simples remessa de entrada)
+-- SAIDA   = item físico enviado (simples remessa de saída)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS AD_FLUXOREMESSA (
+  NUREMESSA   INTEGER PRIMARY KEY AUTOINCREMENT,
+  NUFLUXODIST INTEGER NOT NULL,
+  TIPO        TEXT NOT NULL,
+  CODPROD     INTEGER NOT NULL,
+  EAN         TEXT,
+  LOTE        TEXT,
+  VALIDADE    TEXT,
+  QTD         REAL NOT NULL DEFAULT 0,
+  DTREG       TEXT DEFAULT (datetime('now','localtime')),
+  CODUSU      INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_fluxoremessa ON AD_FLUXOREMESSA(NUFLUXODIST);
 CREATE INDEX IF NOT EXISTS idx_tgfite_nunota ON TGFITE(NUNOTA);
 CREATE INDEX IF NOT EXISTS idx_tgfest_codprod ON TGFEST(CODPROD);
 CREATE INDEX IF NOT EXISTS idx_tgfcab_status ON TGFCAB(STATUSNOTA);

@@ -269,7 +269,26 @@ router.get("/:nunota", async (req, res) => {
       WHERE I.NUNOTA = ?
         AND (? IS NULL OR COALESCE(NULLIF(TRIM(P.LOCALIZACAO),''),'SEM LOCAL') = ?)
       ORDER BY I.SEQUENCIA
-    `).all(nunota, localFiltro, localFiltro);
+    `).all(nunota, localFiltro, localFiltro) as any[];
+
+    // BS-2.2: anexa info do fluxo distinto APROVADO (item NF + item físico e status das remessas)
+    for (const it of itens) {
+      const fd = await db.prepare(
+        "SELECT NUFLUXODIST, CODPRODNF, CODPRODFISICO FROM AD_FLUXODISTINTO WHERE NUNOTA=? AND SEQUENCIA=? AND STATUS='APROVADO' ORDER BY NUFLUXODIST DESC LIMIT 1",
+      ).get(nunota, it.id) as any;
+      if (fd) {
+        const pn = await db.prepare("SELECT DESCRPROD, REFERENCIA FROM TGFPRO WHERE CODPROD=?").get(fd.CODPRODNF) as any;
+        const pf = await db.prepare("SELECT DESCRPROD, REFERENCIA FROM TGFPRO WHERE CODPROD=?").get(fd.CODPRODFISICO) as any;
+        const ent = await db.prepare("SELECT 1 FROM AD_FLUXOREMESSA WHERE NUFLUXODIST=? AND TIPO='ENTRADA'").get(fd.NUFLUXODIST);
+        const sai = await db.prepare("SELECT 1 FROM AD_FLUXOREMESSA WHERE NUFLUXODIST=? AND TIPO='SAIDA'").get(fd.NUFLUXODIST);
+        it.fluxoDistinto = {
+          nufluxodist: fd.NUFLUXODIST,
+          codProdNF: fd.CODPRODNF, descNF: pn?.DESCRPROD, eanNF: pn?.REFERENCIA,
+          codProdFisico: fd.CODPRODFISICO, descFisico: pf?.DESCRPROD, eanFisico: pf?.REFERENCIA,
+          entradaOk: !!ent, saidaOk: !!sai,
+        };
+      }
+    }
 
     res.json({ ...pedido, criticidade: criticidade((pedido as any).horarioCarregamento), itens });
   } catch (e: any) {

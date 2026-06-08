@@ -141,6 +141,9 @@ export default function BipeSeparacao() {
   const [qtdFalt, setQtdFalt] = useState<string>("");
   const [validacao, setValidacao] = useState<ValidacaoResult | null>(null);
   const [lotesExtra, setLotesExtra] = useState<{ lote: string; validade: string; qtd: string }[]>([]);
+  // BS-2.2: bipagem das 2 remessas do fluxo distinto (entrada = item NF, saida = item fisico)
+  const [rEnt, setREnt] = useState({ ean: "", lote: "", validade: "", qtd: "" });
+  const [rSai, setRSai] = useState({ ean: "", lote: "", validade: "", qtd: "" });
 
   // Reset campos ao trocar de item
   useEffect(() => {
@@ -150,6 +153,8 @@ export default function BipeSeparacao() {
     setQtdFalt("");
     setValidacao(null);
     setLotesExtra([]);
+    setREnt({ ean: "", lote: "", validade: "", qtd: "" });
+    setRSai({ ean: "", lote: "", validade: "", qtd: "" });
     // BS-05: ao reabrir item ja separado, traz lote e qtd separada
     if (it && it.status === "conforme") {
       setLote(it.lote || "");
@@ -192,6 +197,21 @@ export default function BipeSeparacao() {
     "post", "/bipagem/registrar-falta",
     { successMessage: "Falta registrada", onSuccess: () => { refetch(); setFaltaOpen(false); setFaltaQtd(""); setFaltaObs(""); setValidacao(null); } },
   );
+  const registrarRemessa = useMutation(
+    "post", "/bipagem/registrar-remessa-fluxo",
+    { successMessage: "Remessa registrada", onSuccess: () => { refetch(); } },
+  );
+  const enviarRemessa = (tipo: "ENTRADA" | "SAIDA") => {
+    const fd = (itemAtual as any)?.fluxoDistinto;
+    if (!fd) return;
+    const r = tipo === "ENTRADA" ? rEnt : rSai;
+    if (!Number(r.qtd) || Number(r.qtd) <= 0) { toast.error("Informe a quantidade separada."); return; }
+    registrarRemessa.mutate({
+      nufluxodist: fd.nufluxodist, tipo,
+      codprod: tipo === "ENTRADA" ? fd.codProdNF : fd.codProdFisico,
+      ean: r.ean, lote: r.lote, validade: r.validade, qtd: Number(r.qtd),
+    } as any);
+  };
   const estornarItem = useMutation(
     "post", "/bipagem/estornar-item",
     { successMessage: "Separação do item estornada", onSuccess: () => { refetch(); setValidacao(null); } },
@@ -304,6 +324,10 @@ export default function BipeSeparacao() {
   // BS-2.4: item com tratativa em aberto fica travado para nova ação (até estorno).
   const tratativaAtual = (itemAtual as any)?.tratativa as string | null;
   const tratativaBloqueia = !!tratativaAtual && TRATATIVA_BLOQUEIA.has(tratativaAtual);
+  const fdAtual = (itemAtual as any)?.fluxoDistinto as {
+    nufluxodist: number; codProdNF: number; descNF: string; eanNF: string;
+    codProdFisico: number; descFisico: string; eanFisico: string; entradaOk: boolean; saidaOk: boolean;
+  } | undefined;
   const onConfirmar = () => {
     if (!itemAtual) return;
     if (nadaInformado) {
@@ -477,6 +501,63 @@ export default function BipeSeparacao() {
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
+              {fdAtual ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-violet-200 bg-violet-50 p-3">
+                    <p className="text-sm font-semibold text-violet-900 flex items-center gap-2">
+                      <ArrowLeftRight className="w-4 h-4" /> Item aprovado em fluxo distinto
+                    </p>
+                    <p className="text-xs text-violet-700 mt-1">
+                      Separe as duas remessas: o item do pedido/NF (remessa de entrada) e o item físico enviado (remessa de saída).
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className={cn("rounded-lg border p-4 space-y-3", fdAtual.entradaOk ? "border-emerald-300 bg-emerald-50/40" : "border-border")}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Item do pedido / NF — remessa de entrada</p>
+                        {fdAtual.entradaOk && <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200">Registrada</Badge>}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{fdAtual.descNF}</p>
+                        <p className="text-xs text-muted-foreground font-mono">cód. {fdAtual.codProdNF} · EAN {fdAtual.eanNF ?? "—"}</p>
+                      </div>
+                      <Input placeholder="Bipe / EAN" className="h-9 text-sm font-mono" value={rEnt.ean} onChange={(e) => setREnt({ ...rEnt, ean: e.target.value })} />
+                      <div className="grid grid-cols-3 gap-2">
+                        <Input placeholder="Lote" className="h-9 text-sm" value={rEnt.lote} onChange={(e) => setREnt({ ...rEnt, lote: e.target.value })} />
+                        <Input type="date" className="h-9 text-sm" value={rEnt.validade} onChange={(e) => setREnt({ ...rEnt, validade: e.target.value })} />
+                        <Input type="number" placeholder="Qtd" className="h-9 text-sm" value={rEnt.qtd} onChange={(e) => setREnt({ ...rEnt, qtd: e.target.value })} />
+                      </div>
+                      <Button size="sm" className="w-full gap-1.5" disabled={registrarRemessa.loading} onClick={() => enviarRemessa("ENTRADA")}>
+                        <Check className="w-4 h-4" /> {fdAtual.entradaOk ? "Atualizar entrada" : "Registrar remessa de entrada"}
+                      </Button>
+                    </div>
+                    <div className={cn("rounded-lg border p-4 space-y-3", fdAtual.saidaOk ? "border-emerald-300 bg-emerald-50/40" : "border-border")}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Item físico enviado — remessa de saída</p>
+                        {fdAtual.saidaOk && <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200">Registrada</Badge>}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{fdAtual.descFisico}</p>
+                        <p className="text-xs text-muted-foreground font-mono">cód. {fdAtual.codProdFisico} · EAN {fdAtual.eanFisico ?? "—"}</p>
+                      </div>
+                      <Input placeholder="Bipe / EAN" className="h-9 text-sm font-mono" value={rSai.ean} onChange={(e) => setRSai({ ...rSai, ean: e.target.value })} />
+                      <div className="grid grid-cols-3 gap-2">
+                        <Input placeholder="Lote" className="h-9 text-sm" value={rSai.lote} onChange={(e) => setRSai({ ...rSai, lote: e.target.value })} />
+                        <Input type="date" className="h-9 text-sm" value={rSai.validade} onChange={(e) => setRSai({ ...rSai, validade: e.target.value })} />
+                        <Input type="number" placeholder="Qtd" className="h-9 text-sm" value={rSai.qtd} onChange={(e) => setRSai({ ...rSai, qtd: e.target.value })} />
+                      </div>
+                      <Button size="sm" className="w-full gap-1.5 bg-sky-600 hover:bg-sky-700" disabled={registrarRemessa.loading} onClick={() => enviarRemessa("SAIDA")}>
+                        <Check className="w-4 h-4" /> {fdAtual.saidaOk ? "Atualizar saída" : "Registrar remessa de saída"}
+                      </Button>
+                    </div>
+                  </div>
+                  {fdAtual.entradaOk && fdAtual.saidaOk && (
+                    <div className="text-xs px-3 py-2 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-2">
+                      <Check className="w-4 h-4" /> Ambas as remessas registradas — item do pedido conferido.
+                    </div>
+                  )}
+                </div>
+              ) : (<>
               {/* Info do item esperado */}
               <div className="bg-muted/50 rounded-lg p-4">
                 <div className="flex items-start justify-between">
@@ -718,6 +799,7 @@ export default function BipeSeparacao() {
                 <Info className="w-3 h-3" />
                 O botão Confirmar trata automaticamente: item conforme, divergência (EAN/equivalência) ou falta (qtd menor que a pedida).
               </p>
+              </>)}
             </CardContent>
           </Card>
         </div>

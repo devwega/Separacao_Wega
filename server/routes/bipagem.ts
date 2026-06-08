@@ -299,4 +299,53 @@ router.post("/estornar-item", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/bipagem/registrar-remessa-fluxo  (BS-2.2)
+ * Registra a bipagem de uma das remessas do fluxo distinto:
+ *   tipo=ENTRADA -> item do pedido/NF (simples remessa de entrada)
+ *   tipo=SAIDA   -> item físico enviado (simples remessa de saída)
+ * Quando ENTRADA e SAIDA estão registradas, o item do pedido é dado como conferido.
+ */
+router.post("/registrar-remessa-fluxo", async (req, res) => {
+  try {
+    const db = getDb();
+    const b = req.body as any;
+    const tipo = b.tipo === "SAIDA" ? "SAIDA" : "ENTRADA";
+    if (!b.nufluxodist) { res.status(400).json({ error: "nufluxodist obrigatório" }); return; }
+    const fd = await db.prepare(
+      "SELECT NUNOTA, SEQUENCIA, CODPRODNF, CODPRODFISICO FROM AD_FLUXODISTINTO WHERE NUFLUXODIST=?",
+    ).get(Number(b.nufluxodist)) as any;
+    if (!fd) { res.status(404).json({ error: "Fluxo distinto não encontrado" }); return; }
+    const qtd = Number(b.qtd) || 0;
+    if (qtd <= 0) { res.status(400).json({ error: "Quantidade deve ser maior que zero" }); return; }
+    const codprod = tipo === "ENTRADA" ? fd.CODPRODNF : fd.CODPRODFISICO;
+
+    await db.prepare("DELETE FROM AD_FLUXOREMESSA WHERE NUFLUXODIST=? AND TIPO=?").run(Number(b.nufluxodist), tipo);
+    await db.prepare(`
+      INSERT INTO AD_FLUXOREMESSA (NUFLUXODIST, TIPO, CODPROD, EAN, LOTE, VALIDADE, QTD, CODUSU)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(Number(b.nufluxodist), tipo, codprod, b.ean || null, b.lote || null, b.validade || null, qtd, b.codusu ?? null);
+
+    const ent = await db.prepare("SELECT QTD FROM AD_FLUXOREMESSA WHERE NUFLUXODIST=? AND TIPO='ENTRADA'").get(Number(b.nufluxodist)) as any;
+    const sai = await db.prepare("SELECT QTD FROM AD_FLUXOREMESSA WHERE NUFLUXODIST=? AND TIPO='SAIDA'").get(Number(b.nufluxodist)) as any;
+    let itemConferido = false;
+    if (ent && sai) {
+      await db.prepare(
+        "UPDATE TGFITE SET QTDENTREGUE=?, QTDCONFERIDA=?, PENDENTE='N', STATUSLOTE='P' WHERE NUNOTA=? AND SEQUENCIA=?",
+      ).run(ent.QTD, ent.QTD, fd.NUNOTA, fd.SEQUENCIA);
+      const prog = await db.prepare(
+        "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
+      ).get(fd.NUNOTA) as any;
+      const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
+      await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
+        .run(perc, perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO", fd.NUNOTA);
+      itemConferido = true;
+    }
+    res.json({ ok: true, tipo, itemConferido });
+  } catch (e: any) {
+    console.error("[registrar-remessa-fluxo] ERRO:", e?.message, e?.stack);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
 export default router;
