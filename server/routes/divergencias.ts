@@ -87,10 +87,10 @@ router.get("/summary", async (_req, res) => {
   const r = await db.prepare(`
     SELECT
       COUNT(*) AS total,
-      SUM(CASE WHEN STATUS='PENDENTE'  THEN 1 ELSE 0 END) AS pendentes,
-      SUM(CASE WHEN STATUS='APROVADO'  THEN 1 ELSE 0 END) AS aprovadas,
-      SUM(CASE WHEN STATUS='BLOQUEADO' THEN 1 ELSE 0 END) AS bloqueadas,
-      SUM(CASE WHEN STATUS='REJEITADO' THEN 1 ELSE 0 END) AS rejeitadas
+      COALESCE(SUM(CASE WHEN STATUS='PENDENTE'  THEN 1 ELSE 0 END), 0) AS pendentes,
+      COALESCE(SUM(CASE WHEN STATUS='APROVADO'  THEN 1 ELSE 0 END), 0) AS aprovadas,
+      COALESCE(SUM(CASE WHEN STATUS='BLOQUEADO' THEN 1 ELSE 0 END), 0) AS bloqueadas,
+      COALESCE(SUM(CASE WHEN STATUS='REJEITADO' THEN 1 ELSE 0 END), 0) AS rejeitadas
     FROM AD_TROCAITEM
   `).get();
   res.json(r);
