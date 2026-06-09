@@ -201,7 +201,7 @@ router.post("/:id/encaminhar-gestor", async (req, res) => {
   const { codusu = 2 } = req.body ?? {};
 
   const div = await db.prepare(`
-    SELECT NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, MOTIVO, TIPODIVERG, STATUS
+    SELECT NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, MOTIVO, TIPODIVERG, STATUS, EANBIPADO
     FROM AD_TROCAITEM WHERE NUTROCAITEM = ?
   `).get(id) as any;
   if (!div) {
@@ -219,12 +219,13 @@ router.post("/:id/encaminhar-gestor", async (req, res) => {
 
   const r = await db.prepare(`
     INSERT INTO AD_FLUXODISTINTO
-      (NUNOTA, SEQUENCIA, CODPRODNF, CODPRODFISICO, TIPO, JUSTIFICATIVA, IMPACTO,
+      (NUNOTA, SEQUENCIA, CODPRODNF, CODPRODFISICO, TIPO, EANFISICO, JUSTIFICATIVA, IMPACTO,
        STATUS, CODUSUSOLICIT, DTSOLICIT)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDENTE', ?, datetime('now','localtime'))
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', ?, datetime('now','localtime'))
   `).run(
     div.NUNOTA, div.SEQUENCIA, div.CODPRODORIG, div.CODPRODSUBST,
     div.TIPODIVERG === "Marca não homologada" ? "MARCA_DIFERENTE" : "EMBALAGEM",
+    div.EANBIPADO ?? null,
     `Encaminhado pelo comercial. Motivo original: ${div.MOTIVO}`,
     "Movimento compensatório de estoque será gerado mediante aprovação gerencial.",
     codusu,

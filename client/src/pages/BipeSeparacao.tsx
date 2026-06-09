@@ -308,6 +308,7 @@ export default function BipeSeparacao() {
       homologada: !/n[ãa]o homologada/i.test(divTipo),
       necessidadeCliente: divNecessidadeCli,
       tipoDivergencia: divTipo,
+      eanBipado: divProdBipado?.ean || ean || undefined,
     } as any);
   };
   const abrirDialogFalta = () => {

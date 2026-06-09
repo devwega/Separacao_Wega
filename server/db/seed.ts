@@ -10,7 +10,7 @@ import { LOCAIS, PRODUTOS, BARRAS, ITENS_DEMO } from "./catalogo.js";
 
 // Versao do seed/catalogo. Ao mudar, o app recarrega o catalogo automaticamente
 // no proximo boot (ensureReady), sem necessidade de reseed manual.
-export const SEED_VERSION = "2026-06-08-catalogo-real-ean-v1";
+export const SEED_VERSION = "2026-06-09-tgfbar-marca-v1";
 
 export async function seedDemoStatusVariants() {
   // no-op — baseline limpo.
@@ -69,6 +69,15 @@ export async function seed({ reset = false }: { reset?: boolean } = {}) {
 
   // Codigos de barras (EANs reais)
   for (const b of BARRAS) s("INSERT OR REPLACE INTO TGFBAR (CODBARRAS, CODPROD, QTDEMBALAGEM) VALUES (?,?,?)", b);
+  // Marca por codigo de barras: o EAN principal (REFERENCIA do produto) herda a marca do cadastro.
+  // EANs alternativos ficam NULL ate serem cadastrados com a marca fisica real.
+  s(`UPDATE TGFBAR SET MARCA = (
+       SELECT P.MARCA FROM TGFPRO P WHERE P.CODPROD = TGFBAR.CODPROD AND P.REFERENCIA = TGFBAR.CODBARRAS
+     ) WHERE EXISTS (
+       SELECT 1 FROM TGFPRO P WHERE P.CODPROD = TGFBAR.CODPROD AND P.REFERENCIA = TGFBAR.CODBARRAS
+     )`);
+  // Demo: EAN alternativo da ALMONDEGA BOVINA 500G (produto 52/SADIA) e fisicamente da SEARA.
+  s("UPDATE TGFBAR SET MARCA = 'SEARA' WHERE CODBARRAS = '7894904575367'");
 
   // Parceiros
   for (const p of [

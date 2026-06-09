@@ -59,8 +59,9 @@ router.post("/validar-ean", async (req, res) => {
       eanOk = true; match = "gtinnfe";
     } else {
       const bar = await db.prepare(
-        "SELECT CODPROD, QTDEMBALAGEM FROM TGFBAR WHERE CODBARRAS = ?",
+        "SELECT CODPROD, QTDEMBALAGEM, MARCA FROM TGFBAR WHERE CODBARRAS = ?",
       ).get(ean) as any;
+      const norm = (m: any) => String(m ?? "").trim().toUpperCase();
       if (bar && bar.CODPROD === alvo.CODPROD) {
         // Marca diferente já aprovada para este item: troca aprovada pelo comercial OU
         // fluxo distinto aprovado pelo gestor com este produto como item físico (BS-2.2).
@@ -70,16 +71,20 @@ router.post("/validar-ean", async (req, res) => {
           ?? await db.prepare(
             "SELECT 1 FROM AD_FLUXODISTINTO WHERE NUNOTA=? AND SEQUENCIA=? AND CODPRODFISICO=? AND STATUS='APROVADO'",
           ).get(nunota, sequencia, alvo.CODPROD);
-        if (aprov) {
+        // Chave de validação = item + marca: EAN alternativo só é conforme se a marca do
+        // código de barras (TGFBAR.MARCA) for a mesma do produto solicitado.
+        const mesmaMarca = !!bar.MARCA && norm(bar.MARCA) === norm(alvo.MARCA);
+        if (aprov || mesmaMarca) {
           eanOk = true; match = "alternativo"; fatorConv = bar.QTDEMBALAGEM;
         } else {
-          // marca/variação diferente da solicitada → divergência para aprovação comercial
+          // marca diferente (ou desconhecida) da solicitada → divergência para aprovação comercial
           marcaOk = false; fatorConv = bar.QTDEMBALAGEM;
-          outroProduto = { CODPROD: alvo.CODPROD, DESCRPROD: alvo.DESCRPROD, MARCA: alvo.MARCA, alternativo: true };
+          outroProduto = { CODPROD: alvo.CODPROD, DESCRPROD: alvo.DESCRPROD, MARCA: bar.MARCA ?? alvo.MARCA, alternativo: true };
         }
       } else if (bar) {
         // EAN cadastrado para OUTRO produto (item/marca diferente) → divergência
-        outroProduto = await db.prepare("SELECT CODPROD, DESCRPROD, MARCA FROM TGFPRO WHERE CODPROD = ?").get(bar.CODPROD);
+        const op = await db.prepare("SELECT CODPROD, DESCRPROD, MARCA FROM TGFPRO WHERE CODPROD = ?").get(bar.CODPROD) as any;
+        outroProduto = op ? { ...op, MARCA: bar.MARCA ?? op.MARCA } : null;
       } else {
         outroProduto = await db.prepare("SELECT CODPROD, DESCRPROD, MARCA FROM TGFPRO WHERE REFERENCIA = ?").get(ean);
       }
@@ -186,13 +191,13 @@ router.post("/registrar-divergencia", async (req, res) => {
     const r = await db.prepare(`
       INSERT INTO AD_TROCAITEM
         (NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, QTDORIG, QTDSUBST,
-         TIPEQUIV, FATORCONV, MOTIVO, STATUS, HOMOLOGADA, NECESSIDADECLI, TIPODIVERG)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', ?, ?, ?)
+         TIPEQUIV, FATORCONV, MOTIVO, STATUS, HOMOLOGADA, NECESSIDADECLI, TIPODIVERG, EANBIPADO)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', ?, ?, ?, ?)
     `).run(
       b.nunota, b.sequencia, item.CODPROD, Number(b.codProdSubst),
       item.QTDNEG, b.qtdSubst ?? item.QTDNEG,
       b.tipoEquiv ?? "EXATA", b.fatorConv ?? 1, b.motivo ?? "",
-      homologada, b.necessidadeCliente ?? "Informar", tipoDiv,
+      homologada, b.necessidadeCliente ?? "Informar", tipoDiv, b.eanBipado ?? null,
     );
     res.json({ ok: true, nutrocaitem: r.lastInsertRowid });
   } catch (e: any) {

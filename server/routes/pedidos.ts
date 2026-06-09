@@ -274,17 +274,22 @@ router.get("/:nunota", async (req, res) => {
     // BS-2.2: anexa info do fluxo distinto APROVADO (item NF + item físico e status das remessas)
     for (const it of itens) {
       const fd = await db.prepare(
-        "SELECT NUFLUXODIST, CODPRODNF, CODPRODFISICO FROM AD_FLUXODISTINTO WHERE NUNOTA=? AND SEQUENCIA=? AND STATUS='APROVADO' ORDER BY NUFLUXODIST DESC LIMIT 1",
+        "SELECT NUFLUXODIST, CODPRODNF, CODPRODFISICO, EANFISICO FROM AD_FLUXODISTINTO WHERE NUNOTA=? AND SEQUENCIA=? AND STATUS='APROVADO' ORDER BY NUFLUXODIST DESC LIMIT 1",
       ).get(nunota, it.id) as any;
       if (fd) {
         const pn = await db.prepare("SELECT DESCRPROD, REFERENCIA, MARCA FROM TGFPRO WHERE CODPROD=?").get(fd.CODPRODNF) as any;
         const pf = await db.prepare("SELECT DESCRPROD, REFERENCIA, MARCA FROM TGFPRO WHERE CODPROD=?").get(fd.CODPRODFISICO) as any;
+        // Marca física real: vem do código de barras bipado (TGFBAR.MARCA); fallback = marca do produto.
+        const barFisico = fd.EANFISICO
+          ? await db.prepare("SELECT MARCA FROM TGFBAR WHERE CODBARRAS=?").get(fd.EANFISICO) as any
+          : null;
         const ent = await db.prepare("SELECT 1 FROM AD_FLUXOREMESSA WHERE NUFLUXODIST=? AND TIPO='ENTRADA'").get(fd.NUFLUXODIST);
         const sai = await db.prepare("SELECT 1 FROM AD_FLUXOREMESSA WHERE NUFLUXODIST=? AND TIPO='SAIDA'").get(fd.NUFLUXODIST);
         it.fluxoDistinto = {
           nufluxodist: fd.NUFLUXODIST,
           codProdNF: fd.CODPRODNF, descNF: pn?.DESCRPROD, eanNF: pn?.REFERENCIA, marcaNF: pn?.MARCA,
-          codProdFisico: fd.CODPRODFISICO, descFisico: pf?.DESCRPROD, eanFisico: pf?.REFERENCIA, marcaFisico: pf?.MARCA,
+          codProdFisico: fd.CODPRODFISICO, descFisico: pf?.DESCRPROD,
+          eanFisico: fd.EANFISICO ?? pf?.REFERENCIA, marcaFisico: barFisico?.MARCA ?? pf?.MARCA,
           entradaOk: !!ent, saidaOk: !!sai,
         };
       }

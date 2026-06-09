@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS TGFPRO (
 CREATE TABLE IF NOT EXISTS TGFBAR (
   CODBARRAS        TEXT PRIMARY KEY,
   CODPROD          INTEGER NOT NULL REFERENCES TGFPRO(CODPROD),
-  QTDEMBALAGEM     REAL DEFAULT 1
+  QTDEMBALAGEM     REAL DEFAULT 1,
+  MARCA            TEXT              -- Marca física deste código de barras (pode diferir da TGFPRO.MARCA)
 );
 
 -- ---------------------------------------------------------------------------
@@ -184,6 +185,7 @@ CREATE TABLE IF NOT EXISTS AD_TROCAITEM (
   HOMOLOGADA     INTEGER DEFAULT 0,    -- 0/1
   NECESSIDADECLI TEXT,                 -- Nenhuma | Informar | Aprovação obrigatória
   TIPODIVERG     TEXT,                 -- Marca homologada, Proporção/Porcionamento, etc.
+  EANBIPADO      TEXT,                 -- EAN físico bipado que originou a divergência (marca real via TGFBAR)
   CODUSUAPROV    INTEGER REFERENCES TSIUSU(CODUSU),
   DTAPROV        TEXT,
   DTCRIACAO      TEXT DEFAULT (datetime('now', 'localtime'))
@@ -220,6 +222,7 @@ CREATE TABLE IF NOT EXISTS AD_FLUXODISTINTO (
   CODPRODNF      INTEGER NOT NULL REFERENCES TGFPRO(CODPROD),
   CODPRODFISICO  INTEGER NOT NULL REFERENCES TGFPRO(CODPROD),
   TIPO           TEXT,                 -- MARCA_DIFERENTE | GRAMATURA | EMBALAGEM
+  EANFISICO      TEXT,                 -- EAN do item físico bipado (marca real via TGFBAR)
   JUSTIFICATIVA  TEXT NOT NULL,
   IMPACTO        TEXT,
   STATUS         TEXT DEFAULT 'PENDENTE', -- PENDENTE | APROVADO | REJEITADO
