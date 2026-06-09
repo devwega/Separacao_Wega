@@ -10,8 +10,8 @@ const router = Router();
 router.post("/validar-ean", async (req, res) => {
   try {
     const db = getDb();
-    const { nunota, sequencia, ean, lote, validade } = req.body as {
-      nunota: number; sequencia: number; ean: string; lote?: string; validade?: string;
+    const { nunota, sequencia, ean, lote, validade, codprod } = req.body as {
+      nunota: number; sequencia: number; ean: string; lote?: string; validade?: string; codprod?: number;
     };
 
     if (!nunota || !sequencia || !ean) {
@@ -20,7 +20,7 @@ router.post("/validar-ean", async (req, res) => {
     }
 
     const item = await db.prepare(`
-      SELECT I.*, P.REFERENCIA AS eanEsperado, P.PRAZOVAL, P.DESCRPROD, P.CONTROLELOTE
+      SELECT I.*, P.REFERENCIA AS eanEsperado, P.PRAZOVAL, P.DESCRPROD, P.CONTROLELOTE, P.LOCALIZACAO
       FROM TGFITE I JOIN TGFPRO P ON I.CODPROD = P.CODPROD
       WHERE I.NUNOTA = ? AND I.SEQUENCIA = ?
     `).get(nunota, sequencia) as any;
@@ -30,18 +30,31 @@ router.post("/validar-ean", async (req, res) => {
       return;
     }
 
+    // Item 5 (BS-2.2): no fluxo distinto, a remessa de SAÍDA valida o item FÍSICO
+    // (codprod override), não o item da linha do pedido. Sem override, valida a própria linha.
+    let alvo: any = {
+      CODPROD: item.CODPROD, eanEsperado: item.eanEsperado, PRAZOVAL: item.PRAZOVAL,
+      CONTROLELOTE: item.CONTROLELOTE, LOCALIZACAO: item.LOCALIZACAO, DESCRPROD: item.DESCRPROD,
+    };
+    if (codprod && Number(codprod) !== item.CODPROD) {
+      const po = await db.prepare(
+        "SELECT CODPROD, REFERENCIA AS eanEsperado, PRAZOVAL, CONTROLELOTE, LOCALIZACAO, DESCRPROD FROM TGFPRO WHERE CODPROD = ?",
+      ).get(Number(codprod)) as any;
+      if (po) alvo = po;
+    }
+
     let eanOk = false;
     let match: "principal" | "alternativo" | "gtinnfe" | null = null;
     let fatorConv = 1;
     let outroProduto: any = null;
 
-    if (item.eanEsperado === ean) {
+    if (alvo.eanEsperado === ean) {
       eanOk = true; match = "principal";
     } else {
       const bar = await db.prepare(
         "SELECT CODPROD, QTDEMBALAGEM FROM TGFBAR WHERE CODBARRAS = ?",
       ).get(ean) as any;
-      if (bar && bar.CODPROD === item.CODPROD) {
+      if (bar && bar.CODPROD === alvo.CODPROD) {
         eanOk = true; match = "alternativo"; fatorConv = bar.QTDEMBALAGEM;
       } else if (item.GTINNFE === ean) {
         eanOk = true; match = "gtinnfe";
@@ -59,20 +72,33 @@ router.post("/validar-ean", async (req, res) => {
       const g = await db.prepare("SELECT VALOR FROM AD_PARAM WHERE CHAVE='VALIDADE_MIN_GLOBAL'").get() as any;
       minParceiro = g ? Number(g.VALOR) : 30;
     }
-    const minExigido = Math.max(Number(item.PRAZOVAL ?? 0), Number(minParceiro ?? 0));
+    const minExigido = Math.max(Number(alvo.PRAZOVAL ?? 0), Number(minParceiro ?? 0));
 
-    const loteOk = item.CONTROLELOTE ? !!(lote && lote.trim()) : true;
+    const loteOk = alvo.CONTROLELOTE ? !!(lote && lote.trim()) : true;
+
+    // Item 4: itens do LOCAL FLV (10400000) não têm validação de validade / shelf life.
+    const isFLV = String(alvo.LOCALIZACAO ?? "").trim().toUpperCase() === "FLV";
 
     let validadeOk = true;
     let shelfLifeOk = true;
-    if (validade) {
-      const dtVal = new Date(validade);
-      const hoje = new Date();
-      const diffDias = Math.ceil((dtVal.getTime() - hoje.getTime()) / 86400000);
-      validadeOk = diffDias > 0;
-      shelfLifeOk = diffDias >= minExigido;
-    } else if (item.CONTROLELOTE) {
-      validadeOk = false;
+    if (!isFLV) {
+      if (validade) {
+        const dtVal = new Date(validade);
+        const hoje = new Date();
+        const diffDias = Math.ceil((dtVal.getTime() - hoje.getTime()) / 86400000);
+        validadeOk = diffDias > 0;
+        shelfLifeOk = diffDias >= minExigido;
+      } else if (alvo.CONTROLELOTE) {
+        validadeOk = false;
+      }
+      // Item 3: se já existe uma exceção de validade APROVADA pelo comercial para este
+      // item, libera o shelf life abaixo do mínimo (evita reenvio em loop após aprovação).
+      if (shelfLifeOk === false) {
+        const ex = await db.prepare(
+          "SELECT 1 FROM AD_TROCAITEM WHERE NUNOTA=? AND SEQUENCIA=? AND STATUS='APROVADO' AND LOWER(TIPODIVERG) LIKE '%validade%'",
+        ).get(nunota, sequencia);
+        if (ex) shelfLifeOk = true;
+      }
     }
 
     const equivalenciaOk = eanOk;
@@ -80,6 +106,7 @@ router.post("/validar-ean", async (req, res) => {
     res.json({
       ok: eanOk && loteOk && validadeOk && shelfLifeOk,
       match,
+      flv: isFLV,
       fatorConv,
       outroProduto,
       motivo: !eanOk

@@ -81,6 +81,7 @@ type ValidacaoResult = {
   ok: boolean;
   match?: string;
   motivo?: string;
+  flv?: boolean;
   fatorConv?: number;
   outroProduto?: { CODPROD: number; DESCRPROD: string };
   flags?: { eanOk: boolean; loteOk: boolean; validadeOk: boolean; equivalenciaOk: boolean; shelfLifeOk: boolean };
@@ -144,6 +145,8 @@ export default function BipeSeparacao() {
   // BS-2.2: bipagem das 2 remessas do fluxo distinto (entrada = item NF, saida = item fisico)
   const [rEnt, setREnt] = useState({ ean: "", lote: "", validade: "", qtd: "" });
   const [rSai, setRSai] = useState({ ean: "", lote: "", validade: "", qtd: "" });
+  // Item 5: a remessa de SAÍDA (item físico) mantém as validações padrão (validar-ean).
+  const [saiValidacao, setSaiValidacao] = useState<ValidacaoResult | null>(null);
 
   // Reset campos ao trocar de item
   useEffect(() => {
@@ -155,6 +158,7 @@ export default function BipeSeparacao() {
     setLotesExtra([]);
     setREnt({ ean: "", lote: "", validade: "", qtd: "" });
     setRSai({ ean: "", lote: "", validade: "", qtd: "" });
+    setSaiValidacao(null);
     // BS-05: ao reabrir item ja separado, traz lote e qtd separada
     if (it && it.status === "conforme") {
       setLote(it.lote || "");
@@ -185,6 +189,11 @@ export default function BipeSeparacao() {
     "post", "/bipagem/validar-ean",
     { onSuccess: (data) => setValidacao(data) },
   );
+  // Item 5: validação padrão da remessa de saída (item físico do fluxo distinto).
+  const validarEanSai = useMutation<any, ValidacaoResult>(
+    "post", "/bipagem/validar-ean",
+    { onSuccess: (data) => setSaiValidacao(data) },
+  );
   const conferir = useMutation(
     "put", "/bipagem/conferir",
     { successMessage: "Item confirmado!", onSuccess: () => { refetch(); setEan(""); setLote(""); setQtdSep(""); setValidacao(null); } },
@@ -206,6 +215,11 @@ export default function BipeSeparacao() {
     if (!fd) return;
     const r = tipo === "ENTRADA" ? rEnt : rSai;
     if (!Number(r.qtd) || Number(r.qtd) <= 0) { toast.error("Informe a quantidade separada."); return; }
+    // Item 5: a saída (item físico) só registra após a validação padrão passar.
+    if (tipo === "SAIDA") {
+      if (!saiValidacao) { toast.error("Bipe e valide o EAN do item físico antes de registrar a saída."); return; }
+      if (!saiValidacao.ok) { toast.error("Resolva os erros de validação do item físico antes de registrar a saída."); return; }
+    }
     registrarRemessa.mutate({
       nufluxodist: fd.nufluxodist, tipo,
       codprod: tipo === "ENTRADA" ? fd.codProdNF : fd.codProdFisico,
@@ -246,6 +260,17 @@ export default function BipeSeparacao() {
   };
   const abrirDialogDivergencia = () => {
     if (!itemAtual) return;
+    // Item 3: validade abaixo do mínimo → aprovação do comercial (mesmo produto, qtd mantida).
+    if (validadeInsuficiente) {
+      setDivCodSubst(String(itemAtual.codprod));
+      setDivQtd(String(itemAtual.qtdPedida));
+      setDivTipo("Validade abaixo do mínimo");
+      setDivNecessidadeCli("Aprovação obrigatória");
+      setDivMotivo(`Validade abaixo do mínimo exigido. Lote ${lote || "—"}, validade ${validade || "—"}. Necessita aprovação comercial para faturar.`);
+      setDivProdBipado(null);
+      setDivOpen(true);
+      return;
+    }
     setDivQtd(qtdSep || String(itemAtual.qtdPedida));
     setDivMotivo("Produto original sem estoque");
     const bipado = validacao?.outroProduto;
@@ -315,11 +340,16 @@ export default function BipeSeparacao() {
   const eanOk = !!validacao && validacao.ok;
   const eanDivergente = !!validacao && !validacao.ok &&
     (validacao.flags?.eanOk === false || validacao.flags?.equivalenciaOk === false || !!validacao.outroProduto);
+  // Item 3: único problema é a validade abaixo do mínimo (EAN/lote ok, não vencida) →
+  // encaminhar para Divergências/Trocas em vez de bloquear.
+  const validadeInsuficiente = !!validacao && !validacao.ok &&
+    validacao.flags?.eanOk === true && validacao.flags?.loteOk === true &&
+    validacao.flags?.validadeOk === true && validacao.flags?.shelfLifeOk === false;
   // BS-2.5: enquanto nada foi bipado/informado, o Confirmar age como "registrar falta" sem trava.
   const nadaInformado = !validacao && !ean.trim() && (qtdSep.trim() === "" || Number(qtdSep) === 0);
   const situacao: "conforme" | "divergencia" | "falta" =
     nadaInformado ? "falta"
-    : eanDivergente ? "divergencia"
+    : (eanDivergente || validadeInsuficiente) ? "divergencia"
     : (!Number.isNaN(qtdSepNum) && qtdSepNum > 0 && qtdSepNum < qtdPedidaAtual ? "falta" : "conforme");
   // BS-2.4: item com tratativa em aberto fica travado para nova ação (até estorno).
   const tratativaAtual = (itemAtual as any)?.tratativa as string | null;
@@ -328,6 +358,15 @@ export default function BipeSeparacao() {
     nufluxodist: number; codProdNF: number; descNF: string; eanNF: string;
     codProdFisico: number; descFisico: string; eanFisico: string; entradaOk: boolean; saidaOk: boolean;
   } | undefined;
+  // Item 5: valida o EAN do item FÍSICO (codprod override) ao bipar na remessa de saída.
+  const handleBiparSai = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && rSai.ean && fdAtual && itemAtual?.id) {
+      validarEanSai.mutate({
+        nunota, sequencia: itemAtual.id, ean: rSai.ean,
+        lote: rSai.lote, validade: rSai.validade, codprod: fdAtual.codProdFisico,
+      });
+    }
+  };
   const onConfirmar = () => {
     if (!itemAtual) return;
     if (nadaInformado) {
@@ -531,7 +570,7 @@ export default function BipeSeparacao() {
                         <Check className="w-4 h-4" /> {fdAtual.entradaOk ? "Atualizar entrada" : "Registrar remessa de entrada"}
                       </Button>
                     </div>
-                    <div className={cn("rounded-lg border p-4 space-y-3", fdAtual.saidaOk ? "border-emerald-300 bg-emerald-50/40" : "border-border")}>
+                    <div className={cn("rounded-lg border p-4 space-y-3", fdAtual.saidaOk ? "border-emerald-300 bg-emerald-50/40" : "border-sky-200")}>
                       <div className="flex items-center justify-between">
                         <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Item físico enviado — remessa de saída</p>
                         {fdAtual.saidaOk && <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200">Registrada</Badge>}
@@ -540,11 +579,47 @@ export default function BipeSeparacao() {
                         <p className="text-sm font-semibold text-foreground">{fdAtual.descFisico}</p>
                         <p className="text-xs text-muted-foreground font-mono">cód. {fdAtual.codProdFisico} · EAN {fdAtual.eanFisico ?? "—"}</p>
                       </div>
-                      <Input placeholder="Bipe / EAN" className="h-9 text-sm font-mono" value={rSai.ean} onChange={(e) => setRSai({ ...rSai, ean: e.target.value })} />
+                      {/* Item 5: o item físico mantém as validações e preenchimentos padrão. */}
+                      <Input
+                        placeholder="Bipe / EAN e pressione Enter"
+                        className="h-9 text-sm font-mono border-2 border-sky-300 focus:border-sky-500"
+                        value={rSai.ean}
+                        onChange={(e) => { setRSai({ ...rSai, ean: e.target.value }); setSaiValidacao(null); }}
+                        onKeyDown={handleBiparSai}
+                      />
+                      {saiValidacao && (
+                        <div className={cn(
+                          "text-xs px-3 py-1.5 rounded-md border",
+                          saiValidacao.ok ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200",
+                        )}>
+                          {saiValidacao.ok
+                            ? `✓ EAN válido (match: ${saiValidacao.match})${saiValidacao.fatorConv && saiValidacao.fatorConv !== 1 ? ` — fator ${saiValidacao.fatorConv}x` : ""}`
+                            : `✗ ${saiValidacao.motivo}${saiValidacao.outroProduto ? ` — pertence a ${saiValidacao.outroProduto.DESCRPROD}` : ""}`}
+                        </div>
+                      )}
                       <div className="grid grid-cols-3 gap-2">
                         <Input placeholder="Lote" className="h-9 text-sm" value={rSai.lote} onChange={(e) => setRSai({ ...rSai, lote: e.target.value })} />
                         <Input type="date" className="h-9 text-sm" value={rSai.validade} onChange={(e) => setRSai({ ...rSai, validade: e.target.value })} />
                         <Input type="number" placeholder="Qtd" className="h-9 text-sm" value={rSai.qtd} onChange={(e) => setRSai({ ...rSai, qtd: e.target.value })} />
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 border-t border-dashed border-border pt-2">
+                        {[
+                          { label: "EAN", flag: saiValidacao?.flags?.eanOk },
+                          { label: "Lote", flag: saiValidacao?.flags?.loteOk },
+                          { label: "Validade", flag: saiValidacao?.flags?.validadeOk && saiValidacao?.flags?.shelfLifeOk },
+                          { label: "Equiv.", flag: saiValidacao?.flags?.equivalenciaOk },
+                        ].map((v) => {
+                          const color = v.flag === undefined ? "bg-muted text-muted-foreground" : v.flag ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700";
+                          const Icon = v.flag === false ? XCircle : Check;
+                          return (
+                            <div key={v.label} className="flex items-center gap-1 text-[11px]">
+                              <span className={cn("w-4 h-4 rounded-full flex items-center justify-center shrink-0", color)}>
+                                <Icon className="w-2.5 h-2.5" />
+                              </span>
+                              <span className={v.flag === undefined ? "text-muted-foreground" : v.flag ? "text-emerald-700" : "text-red-700"}>{v.label}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                       <Button size="sm" className="w-full gap-1.5 bg-sky-600 hover:bg-sky-700" disabled={registrarRemessa.loading} onClick={() => enviarRemessa("SAIDA")}>
                         <Check className="w-4 h-4" /> {fdAtual.saidaOk ? "Atualizar saída" : "Registrar remessa de saída"}
@@ -818,6 +893,15 @@ export default function BipeSeparacao() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Item 1: marca do item do pedido visível no modal de divergência. */}
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Item do pedido</p>
+              <p className="text-sm font-semibold text-foreground">{itemAtual?.descricao ?? "—"}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                <span className="font-mono">{itemAtual?.codigo ?? "—"}</span>
+                {" · "}Marca: <span className="font-medium text-foreground">{(itemAtual as any)?.marca ?? "—"}</span>
+              </p>
+            </div>
             {divProdBipado && (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
                 <p className="text-[10px] font-medium text-emerald-700 uppercase tracking-wide">Produto bipado (EAN {divProdBipado.ean})</p>
@@ -858,6 +942,7 @@ export default function BipeSeparacao() {
                 <option>Marca não homologada</option>
                 <option>Proporção/Porcionamento</option>
                 <option>Gramatura</option>
+                <option>Validade abaixo do mínimo</option>
               </select>
             </div>
             <div>
