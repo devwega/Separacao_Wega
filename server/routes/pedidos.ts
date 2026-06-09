@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { getDb } from "../db/index.js";
-import { verifyPassword } from "../auth.js";
 
 /** RN-07: criticidade automatica pelo horario de carregamento (HH:MM). Criterio padrao. */
 function criticidade(horario?: string): "critica" | "alta" | "media" | "baixa" {
@@ -370,23 +369,18 @@ router.get("/:nunota/locais", async (req, res) => {
 
 /**
  * POST /api/pedidos/:nunota/iniciar-separacao-local (PL-1.1)
- * Inicia/retoma a separacao de um local especifico, exigindo login+senha do separador.
+ * Inicia/retoma a separacao de um local especifico. A separacao e registrada no
+ * usuario autenticado da sessao (token) — sem re-login no modal.
  */
 router.post("/:nunota/iniciar-separacao-local", async (req, res) => {
   try {
     const db = getDb();
     const nunota = Number(req.params.nunota);
-    const { local, login, senha } = (req.body ?? {}) as { local?: string; login?: string; senha?: string };
+    const { local } = (req.body ?? {}) as { local?: string };
     if (!local) { res.status(400).json({ error: "Informe o local a separar" }); return; }
-    if (!login || !senha) { res.status(400).json({ error: "Informe login e senha" }); return; }
 
-    const cred = await db.prepare(
-      "SELECT CODUSU, SENHA, ATIVO FROM AD_LOGIN WHERE LOWER(LOGIN)=LOWER(?)",
-    ).get(login) as any;
-    if (!cred || !cred.ATIVO || !verifyPassword(senha, cred.SENHA)) {
-      res.status(401).json({ error: "Login ou senha invalidos" });
-      return;
-    }
+    const codusu = Number((req as any).user?.codusu);
+    if (!codusu) { res.status(401).json({ error: "Nao autenticado" }); return; }
 
     const cab = await db.prepare("SELECT AD_STATUSSEP FROM TGFCAB WHERE NUNOTA=?").get(nunota) as any;
     if (!cab) { res.status(404).json({ error: "Pedido nao encontrado" }); return; }
@@ -397,16 +391,16 @@ router.post("/:nunota/iniciar-separacao-local", async (req, res) => {
              AD_DTINICIOSEP = COALESCE(AD_DTINICIOSEP, datetime('now','localtime')),
              AD_CODUSUSEP = ?
        WHERE NUNOTA = ?
-    `).run(cred.CODUSU, nunota);
+    `).run(codusu, nunota);
     await db.prepare(`
       INSERT OR REPLACE INTO AD_SEPARACAO (NUNOTA, STATUS, PERCPROGRESSO, CODUSU, DTINICIO)
       VALUES (?, 'EM_ANDAMENTO',
               COALESCE((SELECT PERCPROGRESSO FROM AD_SEPARACAO WHERE NUNOTA=?), 0),
               ?,
               COALESCE((SELECT DTINICIO FROM AD_SEPARACAO WHERE NUNOTA=?), datetime('now','localtime')))
-    `).run(nunota, nunota, cred.CODUSU, nunota);
+    `).run(nunota, nunota, codusu, nunota);
 
-    res.json({ ok: true, nunota, local, codusu: cred.CODUSU });
+    res.json({ ok: true, nunota, local, codusu });
   } catch (e: any) {
     console.error("[iniciar-separacao-local] ERRO:", e?.message);
     res.status(500).json({ error: e?.message });

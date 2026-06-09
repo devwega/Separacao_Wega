@@ -1,7 +1,7 @@
 /**
  * Tela 9.1 — Painel de Pedidos Liberados para Separação
- * PL-1.1: ao iniciar/retomar, escolher o LOCAL (definido pelo cadastro do item) e
- *         autenticar com login+senha do separador.
+ * PL-1.1: ao iniciar/retomar, escolher o LOCAL (definido pelo cadastro do item).
+ *         A separação é registrada no usuário autenticado na sessão (sem re-login).
  * PL-1.2: progresso por local (locais concluídos / total de locais).
  * PL-1.3: botão Finalizar separação.
  */
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Package, Clock, AlertTriangle, CheckCircle2, Search, Play, RotateCcw, Eye, Ship,
-  Loader2, ListChecks, Undo2, MapPin, Lock, Flag, User,
+  Loader2, ListChecks, Undo2, MapPin, Flag,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -44,18 +44,16 @@ export default function PedidosLiberados() {
   const { data: embarcacoes } = useFetch<{ value: string }[]>("/pedidos/embarcacoes");
   const [, setLocation] = useLocation();
 
-  // Modal de seleção de local + login/senha (PL-1.1)
+  // Modal de seleção de local (PL-1.1) — usa o usuário já autenticado na sessão.
   const [modalPedido, setModalPedido] = useState<{ nunota: number; id: string } | null>(null);
   const [locais, setLocais] = useState<LocalSep[]>([]);
   const [loadingLocais, setLoadingLocais] = useState(false);
   const [selLocal, setSelLocal] = useState<string>("");
-  const [login, setLogin] = useState("");
-  const [senha, setSenha] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const abrirModal = async (pedido: Pedido) => {
     setModalPedido({ nunota: pedido.nunota, id: pedido.id });
-    setSelLocal(""); setLogin(""); setSenha(""); setLocais([]); setLoadingLocais(true);
+    setSelLocal(""); setLocais([]); setLoadingLocais(true);
     try {
       const res = await api.get<LocalSep[]>(`/pedidos/${pedido.nunota}/locais`);
       setLocais(res.data ?? []);
@@ -71,10 +69,9 @@ export default function PedidosLiberados() {
   const confirmarInicio = async () => {
     if (!modalPedido) return;
     if (!selLocal) { toast.error("Selecione o local a separar."); return; }
-    if (!login || !senha) { toast.error("Informe login e senha."); return; }
     setSubmitting(true);
     try {
-      await api.post(`/pedidos/${modalPedido.nunota}/iniciar-separacao-local`, { local: selLocal, login, senha });
+      await api.post(`/pedidos/${modalPedido.nunota}/iniciar-separacao-local`, { local: selLocal });
       const nunota = modalPedido.nunota;
       setModalPedido(null);
       refetch(); refetchSummary();
@@ -290,7 +287,7 @@ export default function PedidosLiberados() {
         </Table>
       </div>
 
-      {/* Modal — escolher local + login/senha (PL-1.1) */}
+      {/* Modal — escolher local (PL-1.1). Sem re-login: usa o usuário autenticado na sessão. */}
       <Dialog open={!!modalPedido} onOpenChange={(o) => { if (!o) setModalPedido(null); }}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
@@ -298,7 +295,7 @@ export default function PedidosLiberados() {
               <MapPin className="w-5 h-5 text-primary" /> Iniciar separação — {modalPedido?.id}
             </DialogTitle>
             <DialogDescription>
-              Escolha o local a separar (definido pelo cadastro do item) e confirme com seu login e senha.
+              Escolha o local a separar (definido pelo cadastro do item).
             </DialogDescription>
           </DialogHeader>
 
@@ -335,22 +332,11 @@ export default function PedidosLiberados() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs flex items-center gap-1"><User className="w-3 h-3" /> Login</Label>
-                <Input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="seu login" className="h-9" autoComplete="username" />
-              </div>
-              <div>
-                <Label className="text-xs flex items-center gap-1"><Lock className="w-3 h-3" /> Senha</Label>
-                <Input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="••••••" className="h-9" autoComplete="current-password"
-                  onKeyDown={(e) => { if (e.key === "Enter") confirmarInicio(); }} />
-              </div>
-            </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalPedido(null)}>Cancelar</Button>
-            <Button onClick={confirmarInicio} disabled={submitting || !selLocal || !login || !senha} className="gap-1.5">
+            <Button onClick={confirmarInicio} disabled={submitting || !selLocal} className="gap-1.5">
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Iniciar separação do local
             </Button>
           </DialogFooter>
