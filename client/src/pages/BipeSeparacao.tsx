@@ -83,8 +83,8 @@ type ValidacaoResult = {
   motivo?: string;
   flv?: boolean;
   fatorConv?: number;
-  outroProduto?: { CODPROD: number; DESCRPROD: string };
-  flags?: { eanOk: boolean; loteOk: boolean; validadeOk: boolean; equivalenciaOk: boolean; shelfLifeOk: boolean };
+  outroProduto?: { CODPROD: number; DESCRPROD: string; MARCA?: string; alternativo?: boolean };
+  flags?: { eanOk: boolean; marcaOk?: boolean; loteOk: boolean; validadeOk: boolean; equivalenciaOk: boolean; shelfLifeOk: boolean };
 };
 
 export default function BipeSeparacao() {
@@ -113,6 +113,8 @@ export default function BipeSeparacao() {
       qtdPedida: i.qtdPedida,
       qtdSeparada: i.qtdSeparada,
       status: (i.status as "conforme" | "separacao" | "pendente") ?? "pendente",
+      // Item 5: carrega o fluxo distinto aprovado (item NF + item físico) para a tela dividida.
+      fluxoDistinto: i.fluxoDistinto,
     }));
   }, [pedido]);
 
@@ -177,7 +179,7 @@ export default function BipeSeparacao() {
   const [divMotivo, setDivMotivo] = useState("");
   const [divTipo, setDivTipo] = useState("Marca homologada");
   const [divNecessidadeCli, setDivNecessidadeCli] = useState("Informar");
-  const [divProdBipado, setDivProdBipado] = useState<{ codprod: number; nome: string; ean: string } | null>(null);
+  const [divProdBipado, setDivProdBipado] = useState<{ codprod: number; nome: string; ean: string; marca?: string } | null>(null);
 
   // Dialog state — Falta
   const [faltaOpen, setFaltaOpen] = useState(false);
@@ -272,10 +274,14 @@ export default function BipeSeparacao() {
       return;
     }
     setDivQtd(qtdSep || String(itemAtual.qtdPedida));
-    setDivMotivo("Produto original sem estoque");
     const bipado = validacao?.outroProduto;
+    // marca diferente da solicitada (EAN alternativo do mesmo item ou EAN de outro produto)
+    const marcaDiferente = validacao?.flags?.marcaOk === false || bipado?.alternativo === true;
+    setDivMotivo(marcaDiferente
+      ? `Marca bipada diferente da solicitada (${(itemAtual as any).marca ?? "—"}). EAN bipado: ${ean}.`
+      : "Produto original sem estoque");
     setDivCodSubst(bipado?.CODPROD ? String(bipado.CODPROD) : "");
-    setDivProdBipado(bipado ? { codprod: bipado.CODPROD, nome: bipado.DESCRPROD, ean } : null);
+    setDivProdBipado(bipado ? { codprod: bipado.CODPROD, nome: bipado.DESCRPROD, ean, marca: bipado.MARCA } : null);
     setDivTipo("Marca homologada");
     setDivNecessidadeCli("Informar");
     setDivOpen(true);
@@ -906,7 +912,7 @@ export default function BipeSeparacao() {
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
                 <p className="text-[10px] font-medium text-emerald-700 uppercase tracking-wide">Produto bipado (EAN {divProdBipado.ean})</p>
                 <p className="text-sm font-semibold text-emerald-900">{divProdBipado.nome}</p>
-                <p className="text-xs text-emerald-700 font-mono mt-0.5">cód. {divProdBipado.codprod}</p>
+                <p className="text-xs text-emerald-700 font-mono mt-0.5">cód. {divProdBipado.codprod} · Marca: {divProdBipado.marca ?? "—"}</p>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
