@@ -77,9 +77,11 @@ router.post("/validar-ean", async (req, res) => {
         if (aprov || mesmaMarca) {
           eanOk = true; match = "alternativo"; fatorConv = bar.QTDEMBALAGEM;
         } else {
-          // marca diferente (ou desconhecida) da solicitada → divergência para aprovação comercial
+          // marca diferente (ou desconhecida) da solicitada → divergência para aprovação comercial.
+          // MARCA fica null quando o EAN não tem marca cadastrada — o separador informa no modal
+          // e o cadastro aprende (TGFBAR.MARCA é atualizado ao registrar a divergência).
           marcaOk = false; fatorConv = bar.QTDEMBALAGEM;
-          outroProduto = { CODPROD: alvo.CODPROD, DESCRPROD: alvo.DESCRPROD, MARCA: bar.MARCA ?? alvo.MARCA, alternativo: true };
+          outroProduto = { CODPROD: alvo.CODPROD, DESCRPROD: alvo.DESCRPROD, MARCA: bar.MARCA ?? null, alternativo: true };
         }
       } else if (bar) {
         // EAN cadastrado para OUTRO produto (item/marca diferente) → divergência
@@ -137,7 +139,9 @@ router.post("/validar-ean", async (req, res) => {
       fatorConv,
       outroProduto,
       motivo: !marcaOk
-        ? "EAN de marca diferente da solicitada — registre divergência para aprovação"
+        ? (outroProduto?.MARCA
+          ? `EAN de marca diferente da solicitada (${outroProduto.MARCA}) — registre divergência para aprovação`
+          : "EAN sem marca cadastrada — confirme a marca física e registre divergência para aprovação")
         : !eanOk
         ? (outroProduto ? "EAN pertence a outro produto" : "EAN não encontrado")
         : !loteOk ? "Lote obrigatório para este produto"
@@ -199,6 +203,12 @@ router.post("/registrar-divergencia", async (req, res) => {
       b.tipoEquiv ?? "EXATA", b.fatorConv ?? 1, b.motivo ?? "",
       homologada, b.necessidadeCliente ?? "Informar", tipoDiv, b.eanBipado ?? null,
     );
+    // Cadastro aprende a marca física do EAN bipado: o separador informa no modal e o
+    // TGFBAR.MARCA é atualizado — vale para TODOS os itens nas próximas bipagens.
+    if (b.eanBipado && b.marcaBipada && String(b.marcaBipada).trim()) {
+      await db.prepare("UPDATE TGFBAR SET MARCA=? WHERE CODBARRAS=?")
+        .run(String(b.marcaBipada).trim().toUpperCase(), String(b.eanBipado));
+    }
     res.json({ ok: true, nutrocaitem: r.lastInsertRowid });
   } catch (e: any) {
     console.error("[registrar-divergencia] ERRO:", e?.message, e?.stack);

@@ -180,6 +180,9 @@ export default function BipeSeparacao() {
   const [divTipo, setDivTipo] = useState("Marca homologada");
   const [divNecessidadeCli, setDivNecessidadeCli] = useState("Informar");
   const [divProdBipado, setDivProdBipado] = useState<{ codprod: number; nome: string; ean: string; marca?: string } | null>(null);
+  // Marca física do EAN bipado — editável; quando o EAN não tem marca cadastrada, o
+  // separador informa e o cadastro (TGFBAR.MARCA) aprende para as próximas bipagens.
+  const [divMarcaBipada, setDivMarcaBipada] = useState("");
 
   // Dialog state — Falta
   const [faltaOpen, setFaltaOpen] = useState(false);
@@ -284,6 +287,7 @@ export default function BipeSeparacao() {
       : "Produto original sem estoque");
     setDivCodSubst(bipado?.CODPROD ? String(bipado.CODPROD) : "");
     setDivProdBipado(bipado ? { codprod: bipado.CODPROD, nome: bipado.DESCRPROD, ean, marca: bipado.MARCA } : null);
+    setDivMarcaBipada(bipado?.MARCA ?? "");
     setDivTipo("Marca homologada");
     setDivNecessidadeCli("Informar");
     setDivOpen(true);
@@ -299,6 +303,10 @@ export default function BipeSeparacao() {
       toast.error("Motivo é obrigatório.");
       return;
     }
+    if (divProdBipado && !divProdBipado.marca && !divMarcaBipada.trim()) {
+      toast.error("Informe a marca do item bipado — este EAN ainda não tem marca cadastrada.");
+      return;
+    }
     registrarDivergencia.mutate({
       nunota, sequencia: itemAtual.id,
       codProdSubst: codSubst,
@@ -309,6 +317,7 @@ export default function BipeSeparacao() {
       necessidadeCliente: divNecessidadeCli,
       tipoDivergencia: divTipo,
       eanBipado: divProdBipado?.ean || ean || undefined,
+      marcaBipada: divMarcaBipada.trim() || undefined,
     } as any);
   };
   const abrirDialogFalta = () => {
@@ -921,10 +930,24 @@ export default function BipeSeparacao() {
               </p>
             </div>
             {divProdBipado && (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 space-y-1.5">
                 <p className="text-[10px] font-medium text-emerald-700 uppercase tracking-wide">Produto bipado (EAN {divProdBipado.ean})</p>
                 <p className="text-sm font-semibold text-emerald-900">{divProdBipado.nome}</p>
-                <p className="text-xs text-emerald-700 font-mono mt-0.5">cód. {divProdBipado.codprod} · Marca: {divProdBipado.marca ?? "—"}</p>
+                <p className="text-xs text-emerald-700 font-mono">cód. {divProdBipado.codprod}</p>
+                <div>
+                  <Label className="text-xs text-emerald-800">Marca do item bipado {divProdBipado.marca ? "" : "*"}</Label>
+                  <Input
+                    value={divMarcaBipada}
+                    onChange={(e) => setDivMarcaBipada(e.target.value)}
+                    placeholder="Informe a marca física do produto bipado"
+                    className="h-8 mt-1 bg-white"
+                  />
+                  {!divProdBipado.marca && (
+                    <p className="text-[10px] text-emerald-700 mt-1">
+                      EAN sem marca cadastrada — a marca informada será salva no cadastro e usada nas próximas bipagens.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
