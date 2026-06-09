@@ -129,10 +129,10 @@ export default function PreFaturamento() {
     { successMessage: "Devolvido para ajuste", onSuccess: refetch },
   );
   const pedidoResumo = api?.pedidoResumo ?? mockPedidoResumo;
-  const itensConformes = api?.itensConformes ?? mockItensConformes;
-  const itensSubstituidos = api?.itensSubstituidos ?? mockItensSubstituidos;
-  const itensFalta = api?.itensFalta ?? mockItensFalta;
-  const itensFluxoDistinto = api?.itensFluxoDistinto ?? mockItensFluxoDistinto;
+  const itensConformes = (api?.itensConformes ?? mockItensConformes) as PreFatType["itensConformes"];
+  const itensSubstituidos = (api?.itensSubstituidos ?? mockItensSubstituidos) as PreFatType["itensSubstituidos"];
+  const itensFalta = (api?.itensFalta ?? mockItensFalta) as PreFatType["itensFalta"];
+  const itensFluxoDistinto = (api?.itensFluxoDistinto ?? mockItensFluxoDistinto) as PreFatType["itensFluxoDistinto"];
   const pendencias = api?.pendencias ?? mockPendencias;
   const percentConforme = Math.round((pedidoResumo.conformes / pedidoResumo.totalItens) * 100);
 
@@ -307,7 +307,10 @@ export default function PreFaturamento() {
               {itensConformes.map((item) => (
                 <TableRow key={item.codigo}>
                   <TableCell className="text-xs font-mono text-muted-foreground">{item.codigo}</TableCell>
-                  <TableCell className="text-sm">{item.descricao}</TableCell>
+                  <TableCell className="text-sm">
+                    {item.descricao}
+                    <span className="block text-xs text-muted-foreground">Marca: {item.marca ?? "—"}</span>
+                  </TableCell>
                   <TableCell className="text-sm text-center font-semibold tabular-nums">{item.qtd}</TableCell>
                   <TableCell className="text-xs font-mono text-muted-foreground">{item.lote}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{item.validade}</TableCell>
@@ -345,13 +348,19 @@ export default function PreFaturamento() {
                   <TableCell>
                     <div>
                       <p className="text-sm">{item.descOriginal}</p>
-                      <p className="text-xs font-mono text-muted-foreground">{item.codOriginal}</p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-mono">{item.codOriginal}</span>
+                        {" · "}Marca: {item.marcaOriginal ?? "—"}
+                      </p>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div>
                       <p className="text-sm">{item.descSubstituto}</p>
-                      <p className="text-xs font-mono text-muted-foreground">{item.codSubstituto}</p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-mono">{item.codSubstituto}</span>
+                        {" · "}Marca: {item.marcaSubstituto ?? "—"}
+                      </p>
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-center tabular-nums">{item.qtdOriginal}</TableCell>
@@ -392,7 +401,10 @@ export default function PreFaturamento() {
               {itensFalta.map((item) => (
                 <TableRow key={item.codigo}>
                   <TableCell className="text-xs font-mono text-muted-foreground">{item.codigo}</TableCell>
-                  <TableCell className="text-sm">{item.descricao}</TableCell>
+                  <TableCell className="text-sm">
+                    {item.descricao}
+                    <span className="block text-xs text-muted-foreground">Marca: {item.marca ?? "—"}</span>
+                  </TableCell>
                   <TableCell className="text-sm text-center tabular-nums">{item.qtdPedida}</TableCell>
                   <TableCell className="text-sm text-center font-semibold text-red-600 tabular-nums">{item.qtdFaltante}</TableCell>
                   <TableCell>
@@ -439,13 +451,19 @@ export default function PreFaturamento() {
                   <TableCell>
                     <div>
                       <p className="text-sm">{item.descNF}</p>
-                      <p className="text-xs font-mono text-muted-foreground">{item.codNF}</p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-mono">{item.codNF}</span>
+                        {" · "}Marca: {item.marcaNF ?? "—"}
+                      </p>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div>
                       <p className="text-sm">{item.descFisico}</p>
-                      <p className="text-xs font-mono text-muted-foreground">{item.codFisico}</p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-mono">{item.codFisico}</span>
+                        {" · "}Marca: {item.marcaFisico ?? "—"}
+                      </p>
                     </div>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{item.aprovadoPor}</TableCell>

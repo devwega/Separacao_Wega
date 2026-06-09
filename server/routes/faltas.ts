@@ -40,6 +40,7 @@ router.get("/", async (req, res) => {
       CAB.NUNNOTA   AS pedido,
       PAR.NOMEPARC  AS cliente,
       P.DESCRPROD   AS item,
+      P.MARCA       AS marca,
       ('PRD-' || printf('%06d', P.CODPROD)) AS codigo,
       I.QTDNEG      AS qtdPedida,
       F.QTDFALTA    AS qtdFaltante,

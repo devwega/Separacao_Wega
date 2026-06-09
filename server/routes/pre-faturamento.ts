@@ -49,6 +49,7 @@ router.get("/:nunota", async (req, res) => {
     SELECT
       ('PRD-' || printf('%06d', I.CODPROD)) AS codigo,
       P.DESCRPROD AS descricao,
+      P.MARCA AS marca,
       I.QTDENTREGUE AS qtd,
       I.CONTROLE AS lote,
       E.DTVAL AS validade
@@ -64,8 +65,10 @@ router.get("/:nunota", async (req, res) => {
     SELECT
       ('PRD-' || printf('%06d', T.CODPRODORIG))  AS codOriginal,
       PO.DESCRPROD AS descOriginal,
+      PO.MARCA AS marcaOriginal,
       ('PRD-' || printf('%06d', T.CODPRODSUBST)) AS codSubstituto,
       PS.DESCRPROD AS descSubstituto,
+      COALESCE(B.MARCA, PS.MARCA) AS marcaSubstituto,
       T.QTDORIG AS qtdOriginal,
       T.QTDSUBST AS qtdSubstituta,
       T.TIPODIVERG AS tipo,
@@ -73,6 +76,7 @@ router.get("/:nunota", async (req, res) => {
     FROM AD_TROCAITEM T
     JOIN TGFPRO PO ON T.CODPRODORIG = PO.CODPROD
     JOIN TGFPRO PS ON T.CODPRODSUBST = PS.CODPROD
+    LEFT JOIN TGFBAR B ON B.CODBARRAS = T.EANBIPADO
     LEFT JOIN TSIUSU USU ON T.CODUSUAPROV = USU.CODUSU
     WHERE T.NUNOTA = ? AND T.STATUS='APROVADO'
   `).all(nunota);
@@ -82,6 +86,7 @@ router.get("/:nunota", async (req, res) => {
     SELECT
       ('PRD-' || printf('%06d', F.CODPROD)) AS codigo,
       P.DESCRPROD AS descricao,
+      P.MARCA AS marca,
       I.QTDNEG AS qtdPedida,
       F.QTDFALTA AS qtdFaltante,
       CASE F.ACAO
@@ -102,13 +107,16 @@ router.get("/:nunota", async (req, res) => {
     SELECT
       ('PRD-' || printf('%06d', F.CODPRODNF)) AS codNF,
       PN.DESCRPROD AS descNF,
+      PN.MARCA AS marcaNF,
       ('PRD-' || printf('%06d', F.CODPRODFISICO)) AS codFisico,
       PF.DESCRPROD AS descFisico,
+      COALESCE(B.MARCA, PF.MARCA) AS marcaFisico,
       APR.NOMEUSU AS aprovadoPor,
       F.JUSTIFICATIVA AS justificativa
     FROM AD_FLUXODISTINTO F
     JOIN TGFPRO PN ON F.CODPRODNF = PN.CODPROD
     JOIN TGFPRO PF ON F.CODPRODFISICO = PF.CODPROD
+    LEFT JOIN TGFBAR B ON B.CODBARRAS = F.EANFISICO
     LEFT JOIN TSIUSU APR ON F.CODUSUAPROV = APR.CODUSU
     WHERE F.NUNOTA = ? AND F.STATUS='APROVADO'
   `).all(nunota);

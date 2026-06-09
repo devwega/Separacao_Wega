@@ -111,8 +111,10 @@ export type Divergencia = {
   cliente: string;
   itemOriginal: string;
   codOriginal: string;
+  marcaOriginal?: string;
   itemSeparado: string;
   codSeparado: string;
+  marcaSeparado?: string;
   tipoDivergencia: string;
   homologada: boolean;
   necessidadeCliente: string;
@@ -128,6 +130,7 @@ export type Falta = {
   pedido: string;
   cliente: string;
   item: string;
+  marca?: string;
   codigo: string;
   qtdPedida: number;
   qtdFaltante: number;
@@ -146,8 +149,10 @@ export type FluxoDistinto = {
   cliente: string;
   itemPedidoNF: string;
   codPedidoNF: string;
+  marcaPedidoNF?: string;
   itemFisico: string;
   codFisico: string;
+  marcaFisico?: string;
   tipo: string;
   justificativa: string;
   impacto: string;
@@ -173,14 +178,14 @@ export type PreFaturamento = {
     fluxoDistinto: number;
     pendenciasImpeditivas: number;
   };
-  itensConformes: { codigo: string; descricao: string; qtd: number; lote: string; validade: string }[];
+  itensConformes: { codigo: string; descricao: string; marca?: string; qtd: number; lote: string; validade: string }[];
   itensSubstituidos: {
-    codOriginal: string; descOriginal: string;
-    codSubstituto: string; descSubstituto: string;
+    codOriginal: string; descOriginal: string; marcaOriginal?: string;
+    codSubstituto: string; descSubstituto: string; marcaSubstituto?: string;
     qtdOriginal: number; qtdSubstituta: number;
     tipo: string; aprovadoPor: string;
   }[];
-  itensFalta: { codigo: string; descricao: string; qtdPedida: number; qtdFaltante: number; acao: string; previsao: string }[];
-  itensFluxoDistinto: { codNF: string; descNF: string; codFisico: string; descFisico: string; aprovadoPor: string; justificativa: string }[];
+  itensFalta: { codigo: string; descricao: string; marca?: string; qtdPedida: number; qtdFaltante: number; acao: string; previsao: string }[];
+  itensFluxoDistinto: { codNF: string; descNF: string; marcaNF?: string; codFisico: string; descFisico: string; marcaFisico?: string; aprovadoPor: string; justificativa: string }[];
   pendencias: { tipo: string; descricao: string; impeditiva: boolean }[];
 };

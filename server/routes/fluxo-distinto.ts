@@ -48,8 +48,10 @@ router.get("/", async (req, res) => {
         PAR.NOMEPARC AS cliente,
         PN.DESCRPROD AS itemPedidoNF,
         ('PRD-' || printf('%06d', PN.CODPROD)) AS codPedidoNF,
+        PN.MARCA AS marcaPedidoNF,
         PF.DESCRPROD AS itemFisico,
         ('PRD-' || printf('%06d', PF.CODPROD)) AS codFisico,
+        COALESCE(B.MARCA, PF.MARCA) AS marcaFisico,
         F.TIPO AS tipo,
         F.JUSTIFICATIVA AS justificativa,
         F.IMPACTO AS impacto,
@@ -63,6 +65,7 @@ router.get("/", async (req, res) => {
       JOIN TGFPAR PAR ON CAB.CODPARC = PAR.CODPARC
       JOIN TGFPRO PN  ON F.CODPRODNF = PN.CODPROD
       JOIN TGFPRO PF  ON F.CODPRODFISICO = PF.CODPROD
+      LEFT JOIN TGFBAR B ON B.CODBARRAS = F.EANFISICO
       JOIN TSIUSU SOL ON F.CODUSUSOLICIT = SOL.CODUSU
       LEFT JOIN TSIUSU APR ON F.CODUSUAPROV = APR.CODUSU
       WHERE ${wheres.join(" AND ")}
@@ -180,8 +183,10 @@ router.get("/:id", async (req, res) => {
         PAR.NOMEPARC AS cliente,
         PN.DESCRPROD AS itemPedidoNF,
         ('PRD-' || printf('%06d', PN.CODPROD)) AS codPedidoNF,
+        PN.MARCA AS marcaPedidoNF,
         PF.DESCRPROD AS itemFisico,
         ('PRD-' || printf('%06d', PF.CODPROD)) AS codFisico,
+        COALESCE(B.MARCA, PF.MARCA) AS marcaFisico,
         F.TIPO AS tipo,
         F.JUSTIFICATIVA AS justificativa,
         F.IMPACTO AS impacto,
@@ -196,6 +201,7 @@ router.get("/:id", async (req, res) => {
       JOIN TGFPAR PAR ON CAB.CODPARC = PAR.CODPARC
       JOIN TGFPRO PN  ON F.CODPRODNF = PN.CODPROD
       JOIN TGFPRO PF  ON F.CODPRODFISICO = PF.CODPROD
+      LEFT JOIN TGFBAR B ON B.CODBARRAS = F.EANFISICO
       JOIN TSIUSU SOL ON F.CODUSUSOLICIT = SOL.CODUSU
       LEFT JOIN TSIUSU APR ON F.CODUSUAPROV = APR.CODUSU
       WHERE F.NUFLUXODIST = ?

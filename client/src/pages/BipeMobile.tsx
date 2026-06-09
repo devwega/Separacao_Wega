@@ -86,6 +86,7 @@ export default function BipeMobile() {
       codigo: i.codigo,
       codprod: i.codprod,
       descricao: i.descricao,
+      marca: i.marca,
       eanEsperado: i.eanEsperado,
       qtdPedida: i.qtdPedida,
       qtdSeparada: i.qtdSeparada,
@@ -301,6 +302,10 @@ export default function BipeMobile() {
             <span className="flex items-center gap-1 font-mono">
               <Hash className="w-3 h-3" />
               {itemAtual?.codigo ?? "—"}
+            </span>
+            <span className="flex items-center gap-1">
+              <Package className="w-3 h-3" />
+              {(itemAtual as any)?.marca ?? "—"}
             </span>
             <span className="flex items-center gap-1 font-mono">
               <ScanBarcode className="w-3 h-3" />
@@ -533,6 +538,9 @@ export default function BipeMobile() {
                         <span className="text-[11px] font-mono text-muted-foreground">
                           {item.codigo}
                         </span>
+                        {(item as any).marca && (
+                          <span className="text-[11px] text-muted-foreground truncate">{(item as any).marca}</span>
+                        )}
                         <StatusBadge status={item.status} />
                       </div>
                     </div>

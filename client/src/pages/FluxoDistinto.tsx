@@ -147,7 +147,10 @@ export default function FluxoDistinto() {
                     <p className="text-[10px] font-semibold uppercase tracking-wider">Item NF (Fiscal)</p>
                   </div>
                   <p className="text-sm font-medium">{f.itemPedidoNF}</p>
-                  <p className="text-xs text-muted-foreground font-mono mt-1">{f.codPedidoNF}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    <span className="font-mono">{f.codPedidoNF}</span>
+                    {" · "}Marca: <span className="font-medium text-foreground">{f.marcaPedidoNF ?? "—"}</span>
+                  </p>
                 </div>
                 <div className="md:col-span-1 flex items-center justify-center">
                   <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
@@ -160,7 +163,10 @@ export default function FluxoDistinto() {
                     <p className="text-[10px] font-semibold text-purple-600 uppercase tracking-wider">Item Físico</p>
                   </div>
                   <p className="text-sm font-medium">{f.itemFisico}</p>
-                  <p className="text-xs text-muted-foreground font-mono mt-1">{f.codFisico}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    <span className="font-mono">{f.codFisico}</span>
+                    {" · "}Marca: <span className="font-medium text-foreground">{f.marcaFisico ?? "—"}</span>
+                  </p>
                 </div>
               </div>
 

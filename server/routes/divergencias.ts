@@ -33,8 +33,11 @@ router.get("/", async (req, res) => {
       PAR.NOMEPARC  AS cliente,
       PO.DESCRPROD  AS itemOriginal,
       ('PRD-' || printf('%06d', PO.CODPROD))  AS codOriginal,
+      PO.MARCA      AS marcaOriginal,
       PS.DESCRPROD  AS itemSeparado,
       ('PRD-' || printf('%06d', PS.CODPROD))  AS codSeparado,
+      -- Marca física real do item separado: vem do EAN bipado (TGFBAR.MARCA); fallback = marca do produto
+      COALESCE(B.MARCA, PS.MARCA) AS marcaSeparado,
       T.TIPODIVERG  AS tipoDivergencia,
       -- A tag "Homologada" deriva do TIPO DE DIVERGÊNCIA, não do checkbox redundante.
       -- "Marca não homologada" => 0; "Marca homologada" => 1; demais tipos usam o valor armazenado.
@@ -65,6 +68,7 @@ router.get("/", async (req, res) => {
     JOIN TGFPAR PAR ON CAB.CODPARC = PAR.CODPARC
     JOIN TGFPRO PO ON T.CODPRODORIG = PO.CODPROD
     JOIN TGFPRO PS ON T.CODPRODSUBST = PS.CODPROD
+    LEFT JOIN TGFBAR B ON B.CODBARRAS = T.EANBIPADO
     LEFT JOIN TSIUSU USU ON T.CODUSUAPROV = USU.CODUSU
     WHERE ${wheres.join(" AND ")}
     ORDER BY T.DTCRIACAO DESC, T.NUTROCAITEM DESC
@@ -79,16 +83,14 @@ router.get("/", async (req, res) => {
  */
 router.get("/summary", async (_req, res) => {
   const db = getDb();
+  // Contagens por STATUS para os cards da tela (todas / pendente / aprovado / bloqueado / rejeitado)
   const r = await db.prepare(`
     SELECT
       COUNT(*) AS total,
-      SUM(CASE WHEN (LOWER(TIPODIVERG) LIKE '%não homologada%' OR LOWER(TIPODIVERG) LIKE '%nao homologada%') THEN 0
-               WHEN LOWER(TIPODIVERG) LIKE '%homologada%' THEN 1
-               ELSE HOMOLOGADA END = 1 THEN 1 ELSE 0 END) AS homologadas,
-      SUM(CASE WHEN (LOWER(TIPODIVERG) LIKE '%não homologada%' OR LOWER(TIPODIVERG) LIKE '%nao homologada%') THEN 0
-               WHEN LOWER(TIPODIVERG) LIKE '%homologada%' THEN 1
-               ELSE HOMOLOGADA END = 0 THEN 1 ELSE 0 END) AS naoHomologadas,
-      SUM(CASE WHEN TIPEQUIV='PROPORCIONAL' THEN 1 ELSE 0 END) AS porProporcao
+      SUM(CASE WHEN STATUS='PENDENTE'  THEN 1 ELSE 0 END) AS pendentes,
+      SUM(CASE WHEN STATUS='APROVADO'  THEN 1 ELSE 0 END) AS aprovadas,
+      SUM(CASE WHEN STATUS='BLOQUEADO' THEN 1 ELSE 0 END) AS bloqueadas,
+      SUM(CASE WHEN STATUS='REJEITADO' THEN 1 ELSE 0 END) AS rejeitadas
     FROM AD_TROCAITEM
   `).get();
   res.json(r);

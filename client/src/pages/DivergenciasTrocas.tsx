@@ -29,9 +29,7 @@ import {
   UserCheck,
   Forward,
   Search,
-  ShieldCheck,
-  AlertTriangle,
-  Scale,
+  Clock,
   Undo2,
 } from "lucide-react";
 
@@ -107,7 +105,7 @@ const mockDivergencias = [
   },
 ];
 
-type Summary = { total: number; homologadas: number; naoHomologadas: number; porProporcao: number };
+type Summary = { total: number; pendentes: number; aprovadas: number; bloqueadas: number; rejeitadas: number };
 
 export default function DivergenciasTrocas() {
   const [filters, setFilters] = useState({ q: "", tipo: "todos", status: "todos" });
@@ -148,16 +146,22 @@ export default function DivergenciasTrocas() {
         </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard icon={ArrowLeftRight} title="Total Divergências" value={summary?.total ?? divergencias.length}
-          subtitle="Aguardando decisão" iconColor="text-blue-600" iconBg="bg-blue-50" />
-        <SummaryCard icon={ShieldCheck} title="Homologadas" value={summary?.homologadas ?? "—"}
-          subtitle="Marca/proporção válida" iconColor="text-emerald-600" iconBg="bg-emerald-50" />
-        <SummaryCard icon={AlertTriangle} title="Não Homologadas" value={summary?.naoHomologadas ?? "—"}
-          subtitle="Exige aprovação cliente" iconColor="text-red-600" iconBg="bg-red-50" />
-        <SummaryCard icon={Scale} title="Por Proporção" value={summary?.porProporcao ?? "—"}
-          subtitle="Fator de conversão aplicado" iconColor="text-purple-600" iconBg="bg-purple-50" />
+      {/* Summary cards — contagens por status (clique para filtrar) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {([
+          { key: "todos",     icon: ArrowLeftRight, title: "Todas",      value: summary?.total,      subtitle: "Total de divergências", color: "text-blue-600",    bg: "bg-blue-50" },
+          { key: "pendente",  icon: Clock,          title: "Pendentes",  value: summary?.pendentes,  subtitle: "Aguardando decisão",    color: "text-amber-600",   bg: "bg-amber-50" },
+          { key: "aprovado",  icon: CheckCircle2,   title: "Aprovadas",  value: summary?.aprovadas,  subtitle: "Trocas aprovadas",      color: "text-emerald-600", bg: "bg-emerald-50" },
+          { key: "bloqueado", icon: Forward,        title: "Bloqueadas", value: summary?.bloqueadas, subtitle: "Encaminhadas ao gestor", color: "text-violet-600", bg: "bg-violet-50" },
+          { key: "rejeitado", icon: XCircle,        title: "Rejeitadas", value: summary?.rejeitadas, subtitle: "Trocas reprovadas",     color: "text-red-600",     bg: "bg-red-50" },
+        ] as const).map((c) => (
+          <button key={c.key} type="button" className="text-left cursor-pointer"
+            onClick={() => setFilters({ ...filters, status: c.key })}>
+            <SummaryCard icon={c.icon} title={c.title} value={c.value ?? "—"} subtitle={c.subtitle}
+              iconColor={c.color} iconBg={c.bg}
+              className={filters.status === c.key ? "ring-2 ring-primary/40 border-primary/40" : ""} />
+          </button>
+        ))}
       </div>
 
       {/* Filters */}
@@ -226,7 +230,10 @@ export default function DivergenciasTrocas() {
                 <div className="md:col-span-4 bg-muted/50 rounded-lg p-3">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Item Original (Pedido)</p>
                   <p className="text-sm font-medium text-foreground">{div.itemOriginal}</p>
-                  <p className="text-xs text-muted-foreground font-mono mt-0.5">{div.codOriginal}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    <span className="font-mono">{div.codOriginal}</span>
+                    {" · "}Marca: <span className="font-medium text-foreground">{div.marcaOriginal ?? "—"}</span>
+                  </p>
                   <div className="mt-2 flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Qtd:</span>
                     <span className="text-sm font-semibold tabular-nums">{div.qtdOriginal}</span>
@@ -246,7 +253,10 @@ export default function DivergenciasTrocas() {
                 <div className="md:col-span-4 bg-primary/5 rounded-lg p-3 border border-primary/10">
                   <p className="text-[10px] font-medium text-primary uppercase tracking-wider mb-1">Item Separado (Físico)</p>
                   <p className="text-sm font-medium text-foreground">{div.itemSeparado}</p>
-                  <p className="text-xs text-muted-foreground font-mono mt-0.5">{div.codSeparado}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    <span className="font-mono">{div.codSeparado}</span>
+                    {" · "}Marca: <span className="font-medium text-foreground">{div.marcaSeparado ?? "—"}</span>
+                  </p>
                   <div className="mt-2 flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Qtd Equiv.:</span>
                     <span className="text-sm font-semibold tabular-nums">{div.qtdEquivalente}</span>

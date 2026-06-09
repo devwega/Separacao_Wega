@@ -253,7 +253,10 @@ export default function FaltasApanho() {
                           <Package className="w-4 h-4 text-muted-foreground" />
                           <div>
                             <p className="text-sm font-medium text-foreground">{falta.item}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{falta.codigo}</p>
+                            <p className="text-xs text-muted-foreground">
+                              <span className="font-mono">{falta.codigo}</span>
+                              {" · "}Marca: <span className="font-medium text-foreground">{falta.marca ?? "—"}</span>
+                            </p>
                           </div>
                         </div>
                       </div>
