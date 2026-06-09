@@ -62,9 +62,14 @@ router.post("/validar-ean", async (req, res) => {
         "SELECT CODPROD, QTDEMBALAGEM FROM TGFBAR WHERE CODBARRAS = ?",
       ).get(ean) as any;
       if (bar && bar.CODPROD === alvo.CODPROD) {
+        // Marca diferente já aprovada para este item: troca aprovada pelo comercial OU
+        // fluxo distinto aprovado pelo gestor com este produto como item físico (BS-2.2).
         const aprov = await db.prepare(
           "SELECT 1 FROM AD_TROCAITEM WHERE NUNOTA=? AND SEQUENCIA=? AND CODPRODSUBST=? AND STATUS='APROVADO'",
-        ).get(nunota, sequencia, alvo.CODPROD);
+        ).get(nunota, sequencia, alvo.CODPROD)
+          ?? await db.prepare(
+            "SELECT 1 FROM AD_FLUXODISTINTO WHERE NUNOTA=? AND SEQUENCIA=? AND CODPRODFISICO=? AND STATUS='APROVADO'",
+          ).get(nunota, sequencia, alvo.CODPROD);
         if (aprov) {
           eanOk = true; match = "alternativo"; fatorConv = bar.QTDEMBALAGEM;
         } else {

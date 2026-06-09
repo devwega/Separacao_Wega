@@ -216,7 +216,9 @@ export default function BipeSeparacao() {
     const fd = (itemAtual as any)?.fluxoDistinto;
     if (!fd) return;
     const r = tipo === "ENTRADA" ? rEnt : rSai;
-    if (!Number(r.qtd) || Number(r.qtd) <= 0) { toast.error("Informe a quantidade separada."); return; }
+    // Entrada (item da NF, não vai fisicamente): quantidade travada na qtd pedida do item.
+    const qtd = tipo === "ENTRADA" ? Number(itemAtual?.qtdPedida ?? 0) : Number(r.qtd);
+    if (!qtd || qtd <= 0) { toast.error("Informe a quantidade separada."); return; }
     // Item 5: a saída (item físico) só registra após a validação padrão passar.
     if (tipo === "SAIDA") {
       if (!saiValidacao) { toast.error("Bipe e valide o EAN do item físico antes de registrar a saída."); return; }
@@ -225,7 +227,7 @@ export default function BipeSeparacao() {
     registrarRemessa.mutate({
       nufluxodist: fd.nufluxodist, tipo,
       codprod: tipo === "ENTRADA" ? fd.codProdNF : fd.codProdFisico,
-      ean: r.ean, lote: r.lote, validade: r.validade, qtd: Number(r.qtd),
+      ean: r.ean, lote: r.lote, validade: r.validade, qtd,
     } as any);
   };
   const estornarItem = useMutation(
@@ -361,8 +363,9 @@ export default function BipeSeparacao() {
   const tratativaAtual = (itemAtual as any)?.tratativa as string | null;
   const tratativaBloqueia = !!tratativaAtual && TRATATIVA_BLOQUEIA.has(tratativaAtual);
   const fdAtual = (itemAtual as any)?.fluxoDistinto as {
-    nufluxodist: number; codProdNF: number; descNF: string; eanNF: string;
-    codProdFisico: number; descFisico: string; eanFisico: string; entradaOk: boolean; saidaOk: boolean;
+    nufluxodist: number; codProdNF: number; descNF: string; eanNF: string; marcaNF?: string;
+    codProdFisico: number; descFisico: string; eanFisico: string; marcaFisico?: string;
+    entradaOk: boolean; saidaOk: boolean;
   } | undefined;
   // Item 5: valida o EAN do item FÍSICO (codprod override) ao bipar na remessa de saída.
   const handleBiparSai = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -564,13 +567,19 @@ export default function BipeSeparacao() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-foreground">{fdAtual.descNF}</p>
-                        <p className="text-xs text-muted-foreground font-mono">cód. {fdAtual.codProdNF} · EAN {fdAtual.eanNF ?? "—"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-mono">cód. {fdAtual.codProdNF}</span> · Marca: <span className="font-medium text-foreground">{fdAtual.marcaNF ?? "—"}</span>
+                        </p>
                       </div>
-                      <Input placeholder="Bipe / EAN" className="h-9 text-sm font-mono" value={rEnt.ean} onChange={(e) => setREnt({ ...rEnt, ean: e.target.value })} />
+                      <p className="text-xs text-muted-foreground">
+                        Item da NF do cliente — não será enviado fisicamente. Sem bipagem/validação; quantidade fixada na do pedido.
+                      </p>
                       <div className="grid grid-cols-3 gap-2">
                         <Input placeholder="Lote" className="h-9 text-sm" value={rEnt.lote} onChange={(e) => setREnt({ ...rEnt, lote: e.target.value })} />
                         <Input type="date" className="h-9 text-sm" value={rEnt.validade} onChange={(e) => setREnt({ ...rEnt, validade: e.target.value })} />
-                        <Input type="number" placeholder="Qtd" className="h-9 text-sm" value={rEnt.qtd} onChange={(e) => setREnt({ ...rEnt, qtd: e.target.value })} />
+                        <Input type="number" readOnly tabIndex={-1} title="Quantidade do pedido (travada)"
+                          className="h-9 text-sm bg-muted/50 cursor-not-allowed"
+                          value={itemAtual?.qtdPedida ?? ""} />
                       </div>
                       <Button size="sm" className="w-full gap-1.5" disabled={registrarRemessa.loading} onClick={() => enviarRemessa("ENTRADA")}>
                         <Check className="w-4 h-4" /> {fdAtual.entradaOk ? "Atualizar entrada" : "Registrar remessa de entrada"}
@@ -583,7 +592,9 @@ export default function BipeSeparacao() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-foreground">{fdAtual.descFisico}</p>
-                        <p className="text-xs text-muted-foreground font-mono">cód. {fdAtual.codProdFisico} · EAN {fdAtual.eanFisico ?? "—"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-mono">cód. {fdAtual.codProdFisico}</span> · Marca: <span className="font-medium text-foreground">{fdAtual.marcaFisico ?? "—"}</span>
+                        </p>
                       </div>
                       {/* Item 5: o item físico mantém as validações e preenchimentos padrão. */}
                       <Input
