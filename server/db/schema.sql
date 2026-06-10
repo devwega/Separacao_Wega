@@ -292,6 +292,7 @@ CREATE TABLE IF NOT EXISTS AD_APANHO_REG (
   NUREG        INTEGER PRIMARY KEY AUTOINCREMENT,
   NUFALTAITEM  INTEGER NOT NULL REFERENCES AD_FALTAITEM(NUFALTAITEM),
   QTD          REAL NOT NULL,
+  EAN          TEXT,                -- EAN bipado pelo comprador (referência da conferência)
   LOTE         TEXT,
   VALIDADE     TEXT,
   DTREG        TEXT,

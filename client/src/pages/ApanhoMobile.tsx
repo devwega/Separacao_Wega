@@ -181,6 +181,7 @@ export default function ApanhoMobile() {
       for (const r of rows) {
         await api.post(`/apanho/${e.nufaltaitem}/registrar`, {
           qtd: Number(r.qtd), lote: r.lote, validade: r.validade,
+          ean: st.ean.trim(),
           nusessao: sessao?.nusessao, lat: g?.lat, lng: g?.lng,
         });
       }

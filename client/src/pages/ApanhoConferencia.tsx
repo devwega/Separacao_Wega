@@ -1,8 +1,9 @@
 /**
  * Conferência de Apanho — consolidada POR SESSÃO.
  * O conferente escolhe a sessão (card no modelo de "compradores em campo" + NF/cupom),
- * vê os itens separados por embarcação e confere item a item num modal com as mesmas
- * validações do BIPE Separação (EAN, lote, validade, equivalência).
+ * vê os itens separados por embarcação e confere item a item num modal.
+ * A validação compara EAN/lote/validade com o que o COMPRADOR bipou no apanho —
+ * a validação contra a base principal já foi feita por ele em campo.
  * Conferência divergente do digitado pelo comprador → pergunta "substituir informações
  * do apanho pela conferência?". Ao conferir, o item do pedido é atualizado e fica
  * marcado como "SEPARADO E CONFERIDO POR APANHO" no BIPE.
@@ -24,7 +25,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type ItemConf = {
-  nureg: number; qtd: number; lote: string | null; validade: string | null; dtReg: string;
+  nureg: number; qtd: number; eanComprador: string | null; lote: string | null; validade: string | null; dtReg: string;
   nufaltaitem: number; nunota: number; sequencia: number; codprod: number; qtdFalta: number;
   embarcacao: string; pedido: string; parceiro: string; item: string; marca: string | null; ean: string | null;
 };
@@ -33,9 +34,11 @@ type SessaoConf = {
   nfChave: string | null; nfFoto: string | null; dtInicio: string; dtFim: string | null;
   itens: ItemConf[];
 };
+// Validação da conferência: compara com o que o COMPRADOR bipou/digitou no apanho
+// (a validação contra a base principal já foi feita por ele em campo).
 type Validacao = {
-  ok: boolean; match?: string; motivo?: string;
-  flags?: { eanOk: boolean; marcaOk?: boolean; loteOk: boolean; validadeOk: boolean; equivalenciaOk: boolean; shelfLifeOk: boolean };
+  ok: boolean; motivo?: string | null;
+  flags: { eanOk: boolean; loteOk: boolean; validadeOk: boolean };
 };
 
 const norm = (s: any) => String(s ?? "").trim().toUpperCase();
@@ -53,7 +56,6 @@ export default function ApanhoConferencia() {
   const [validade, setValidade] = useState("");
   const [qtd, setQtd] = useState("");
   const [validacao, setValidacao] = useState<Validacao | null>(null);
-  const [validando, setValidando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   // Confirmação de substituição (conferência diferente do digitado pelo comprador)
   const [substituirOpen, setSubstituirOpen] = useState(false);
@@ -91,17 +93,24 @@ export default function ApanhoConferencia() {
     setQtd(String(it.qtd ?? ""));
   };
 
-  const validarEan = async () => {
+  // Compara EAN/lote/validade da conferência com o registro do comprador (apanho).
+  // Fallback: registros antigos sem EAN gravado comparam com o EAN principal do produto.
+  const validarConferencia = () => {
     if (!confItem) return;
     if (!ean.trim()) { toast.error("Bipe ou digite o EAN."); return; }
-    setValidando(true);
-    try {
-      const { data } = await api.post<Validacao>("/bipagem/validar-ean", {
-        nunota: confItem.nunota, sequencia: confItem.sequencia, ean: ean.trim(), lote, validade,
-      });
-      setValidacao(data);
-    } catch (e) { toast.error(extractErrorMessage(e, "Erro ao validar EAN")); }
-    finally { setValidando(false); }
+    const eanRef = confItem.eanComprador || confItem.ean;
+    const eanOk = !!eanRef && norm(ean) === norm(eanRef);
+    const loteOk = norm(lote) === norm(confItem.lote);
+    const validadeOk = norm(validade) === norm(confItem.validade);
+    setValidacao({
+      ok: eanOk,
+      motivo: eanOk
+        ? null
+        : (confItem.eanComprador
+          ? "EAN diferente do bipado pelo comprador no apanho"
+          : "EAN não corresponde ao EAN do item (comprador não registrou EAN)"),
+      flags: { eanOk, loteOk, validadeOk },
+    });
   };
 
   const conferenciaIgual = () => {
@@ -130,7 +139,7 @@ export default function ApanhoConferencia() {
   const confirmarConferencia = () => {
     if (!confItem) return;
     if (!validacao) { toast.error("Bipe e valide o EAN antes de confirmar."); return; }
-    if (!validacao.ok) { toast.error("Resolva os erros de validação antes de confirmar."); return; }
+    if (!validacao.flags.eanOk) { toast.error("O EAN conferido precisa ser o mesmo bipado pelo comprador no apanho."); return; }
     if (!Number(qtd) || Number(qtd) <= 0) { toast.error("Informe a quantidade conferida."); return; }
     if (conferenciaIgual()) {
       enviarConferencia(false);
@@ -271,8 +280,10 @@ export default function ApanhoConferencia() {
           </DialogHeader>
           <div className="space-y-3">
             <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">Digitado pelo comprador:</span>{" "}
-              {confItem?.qtd} un{confItem?.lote ? ` · lote ${confItem.lote}` : ""}{confItem?.validade ? ` · validade ${confItem.validade}` : ""}
+              <span className="font-medium text-foreground">Registrado pelo comprador no apanho:</span>{" "}
+              {confItem?.qtd} un
+              {confItem?.eanComprador ? ` · EAN ${confItem.eanComprador}` : " · sem EAN registrado"}
+              {confItem?.lote ? ` · lote ${confItem.lote}` : ""}{confItem?.validade ? ` · validade ${confItem.validade}` : ""}
               {" · "}Marca: {confItem?.marca ?? "—"}
             </div>
             <div>
@@ -284,13 +295,13 @@ export default function ApanhoConferencia() {
                 className="h-10 text-sm font-mono border-2 border-primary/30 focus:border-primary"
                 value={ean}
                 onChange={(e) => { setEan(e.target.value); setValidacao(null); }}
-                onKeyDown={(e) => { if (e.key === "Enter") validarEan(); }}
+                onKeyDown={(e) => { if (e.key === "Enter") validarConferencia(); }}
                 autoFocus
               />
               {validacao && (
                 <div className={cn("mt-1.5 text-xs px-3 py-1.5 rounded-md border",
                   validacao.ok ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200")}>
-                  {validacao.ok ? `✓ EAN válido (match: ${validacao.match})` : `✗ ${validacao.motivo}`}
+                  {validacao.ok ? "✓ EAN confere com o bipado pelo comprador no apanho" : `✗ ${validacao.motivo}`}
                 </div>
               )}
             </div>
@@ -309,13 +320,14 @@ export default function ApanhoConferencia() {
               </div>
             </div>
             <div className="border border-dashed border-border rounded-lg p-3">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Resultado da validação</p>
-              <div className="grid grid-cols-4 gap-2">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                Conferência × registro do comprador
+              </p>
+              <div className="grid grid-cols-3 gap-2">
                 {[
-                  { label: "EAN", flag: validacao?.flags?.eanOk && validacao?.flags?.marcaOk !== false },
+                  { label: "EAN", flag: validacao?.flags?.eanOk },
                   { label: "Lote", flag: validacao?.flags?.loteOk },
-                  { label: "Validade", flag: validacao?.flags?.validadeOk && validacao?.flags?.shelfLifeOk },
-                  { label: "Equiv.", flag: validacao?.flags?.equivalenciaOk },
+                  { label: "Validade", flag: validacao?.flags?.validadeOk },
                 ].map((v) => (
                   <span key={v.label} className={cn("text-[11px] px-1.5 py-1 rounded border text-center",
                     v.flag === undefined ? "bg-muted text-muted-foreground border-border"
@@ -325,11 +337,15 @@ export default function ApanhoConferencia() {
                   </span>
                 ))}
               </div>
+              <p className="text-[10px] text-muted-foreground mt-2">
+                A validação contra a base (EAN/lote/validade/equivalência) já foi feita pelo comprador no momento do apanho.
+                Lote/validade divergentes seguem para a confirmação de substituição.
+              </p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfItem(null)}>Cancelar</Button>
-            <Button onClick={confirmarConferencia} disabled={confirmando || validando} className="gap-1.5">
+            <Button onClick={confirmarConferencia} disabled={confirmando} className="gap-1.5">
               {confirmando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               Confirmar conferência
             </Button>

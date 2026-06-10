@@ -68,7 +68,7 @@ router.get("/sessoes-conferencia", async (_req, res) => {
     ORDER BY S.DTINICIO DESC
   `).all() as any[];
   const itensStmt = db.prepare(`
-    SELECT R.NUREG AS nureg, R.QTD AS qtd, R.LOTE AS lote, R.VALIDADE AS validade, R.DTREG AS dtReg,
+    SELECT R.NUREG AS nureg, R.QTD AS qtd, R.EAN AS eanComprador, R.LOTE AS lote, R.VALIDADE AS validade, R.DTREG AS dtReg,
            F.NUFALTAITEM AS nufaltaitem, F.NUNOTA AS nunota, F.SEQUENCIA AS sequencia,
            F.CODPROD AS codprod, F.QTDFALTA AS qtdFalta,
            CAB.ORDEMCARGA AS embarcacao, CAB.NUNNOTA AS pedido, PAR.NOMEPARC AS parceiro,
@@ -111,7 +111,7 @@ router.get("/registros/:id", async (req, res) => {
 router.post("/:id/registrar", async (req, res) => {
   const db = getDb();
   const id = Number(req.params.id);
-  const { qtd, lote, validade, lat, lng, nfChave, nfFoto, nusessao } = (req.body ?? {}) as any;
+  const { qtd, lote, validade, lat, lng, nfChave, nfFoto, nusessao, ean } = (req.body ?? {}) as any;
   if (!qtd || Number(qtd) <= 0) { res.status(400).json({ error: "Quantidade encontrada inválida" }); return; }
   const falta = await db.prepare("SELECT 1 FROM AD_FALTAITEM WHERE NUFALTAITEM=?").get(id);
   if (!falta) { res.status(404).json({ error: "Item de falta não encontrado" }); return; }
@@ -122,8 +122,8 @@ router.post("/:id/registrar", async (req, res) => {
     if (ses) codusu = ses.CODUSU ?? codusu;
   }
   await db.prepare(
-    "INSERT INTO AD_APANHO_REG (NUFALTAITEM, QTD, LOTE, VALIDADE, DTREG, CODUSU, CONFERIDO, LAT, LNG, NFCHAVE, NFFOTO, NUSESSAO) VALUES (?,?,?,?,datetime('now','localtime'),?,0,?,?,?,?,?)",
-  ).run(id, Number(qtd), lote || null, validade || null, codusu,
+    "INSERT INTO AD_APANHO_REG (NUFALTAITEM, QTD, EAN, LOTE, VALIDADE, DTREG, CODUSU, CONFERIDO, LAT, LNG, NFCHAVE, NFFOTO, NUSESSAO) VALUES (?,?,?,?,?,datetime('now','localtime'),?,0,?,?,?,?,?)",
+  ).run(id, Number(qtd), ean ? String(ean).trim() : null, lote || null, validade || null, codusu,
         (typeof lat === "number" ? lat : null), (typeof lng === "number" ? lng : null),
         nfChave || null, nfFoto || null, nusessao ? Number(nusessao) : null);
   res.json({ ok: true });
