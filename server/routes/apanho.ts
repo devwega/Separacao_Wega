@@ -113,7 +113,11 @@ router.post("/registro/:nureg/conferir", async (req, res) => {
   `).get(reg.NUFALTAITEM) as any;
   let faltaBaixada = false;
   if (f && Number(f.conf) >= Number(f.qtdFalta)) {
-    await db.prepare("UPDATE AD_FALTAITEM SET STATUS='RESOLVIDO' WHERE NUFALTAITEM=?").run(reg.NUFALTAITEM);
+    // Apanho concluído: marca o horário da conferência (DTRESOLUCAO) — o item sai da
+    // tela de Faltas e Apanho e fica disponível apenas via filtro "Concluídos".
+    await db.prepare(
+      "UPDATE AD_FALTAITEM SET STATUS='RESOLVIDO', DTRESOLUCAO=datetime('now','localtime') WHERE NUFALTAITEM=?",
+    ).run(reg.NUFALTAITEM);
     faltaBaixada = true;
   }
   res.json({ ok: true, faltaBaixada });
@@ -144,6 +148,7 @@ router.get("/agrupado", async (req, res) => {
   const brkStmt = db.prepare(`
     SELECT F.NUFALTAITEM AS nufaltaitem, F.NUNOTA AS nunota, CAB.ORDEMCARGA AS embarcacao,
            PAR.NOMEPARC AS parceiro, F.QTDFALTA AS qtdFalta,
+           substr(F.PRAZORETORNO, 12, 5) AS previsao,
            COALESCE((SELECT SUM(QTD) FROM AD_APANHO_REG R WHERE R.NUFALTAITEM=F.NUFALTAITEM),0) AS qtdEncontrada
     FROM AD_FALTAITEM F JOIN TGFCAB CAB ON F.NUNOTA=CAB.NUNOTA JOIN TGFPAR PAR ON CAB.CODPARC=PAR.CODPARC
     WHERE F.ACAO='APANHO' AND F.STATUS <> 'RESOLVIDO' AND F.CODPROD=? ORDER BY CAB.ORDEMCARGA

@@ -106,7 +106,7 @@ router.post("/:id/decidir", async (req, res) => {
   const novoStatus = acao === "APROVAR" ? "APROVADO" : "REJEITADO";
 
   const div = await db.prepare(
-    "SELECT NUNOTA, SEQUENCIA, CODPRODSUBST, QTDSUBST, STATUS FROM AD_TROCAITEM WHERE NUTROCAITEM=?",
+    "SELECT NUNOTA, SEQUENCIA, CODPRODSUBST, QTDSUBST, STATUS, TIPODIVERG FROM AD_TROCAITEM WHERE NUTROCAITEM=?",
   ).get(id) as any;
   if (!div) {
     res.status(404).json({ error: "Divergência não encontrada" });
@@ -127,21 +127,29 @@ router.post("/:id/decidir", async (req, res) => {
      WHERE NUTROCAITEM = ?
   `).run(novoStatus, codusu, id);
 
+  const ehCorte = div.TIPODIVERG === "Corte" || !div.QTDSUBST || Number(div.QTDSUBST) <= 0;
+
   // RN-06: ao APROVAR, substitui o item no pedido e devolve para separacao do substituto.
-  // Caso CORTE (QTDSUBST <= 0): item fica resolvido (PENDENTE='N'), sem travar o progresso,
-  // e a falta correspondente é baixada (FA-5.1).
+  // Caso CORTE: o item MANTÉM a quantidade pedida original (vai cortado na decisão
+  // comercial, não zerado) — fica marcado como tratado (PENDENTE='N') e bloqueado no
+  // BIPE com a tag "produto cortado do pedido". Estorno devolve ao estágio anterior.
   if (acao === "APROVAR") {
-    const ehCorte = !div.QTDSUBST || Number(div.QTDSUBST) <= 0;
-    await db.prepare(`
-      UPDATE TGFITE
-         SET CODPROD = ?, QTDNEG = ?, QTDENTREGUE = 0, QTDCONFERIDA = 0,
-             PENDENTE = ?, CONTROLE = '', STATUSLOTE = 'A'
-       WHERE NUNOTA = ? AND SEQUENCIA = ?
-    `).run(div.CODPRODSUBST, div.QTDSUBST, ehCorte ? "N" : "S", div.NUNOTA, div.SEQUENCIA);
     if (ehCorte) {
+      await db.prepare(`
+        UPDATE TGFITE
+           SET QTDENTREGUE = 0, QTDCONFERIDA = 0, PENDENTE = 'N', CONTROLE = '', STATUSLOTE = 'A'
+         WHERE NUNOTA = ? AND SEQUENCIA = ?
+      `).run(div.NUNOTA, div.SEQUENCIA);
       await db.prepare(
         "UPDATE AD_FALTAITEM SET STATUS='RESOLVIDO', DTRESOLUCAO=datetime('now','localtime') WHERE NUNOTA=? AND SEQUENCIA=? AND ACAO='CORTE'",
       ).run(div.NUNOTA, div.SEQUENCIA);
+    } else {
+      await db.prepare(`
+        UPDATE TGFITE
+           SET CODPROD = ?, QTDNEG = ?, QTDENTREGUE = 0, QTDCONFERIDA = 0,
+               PENDENTE = 'S', CONTROLE = '', STATUSLOTE = 'A'
+         WHERE NUNOTA = ? AND SEQUENCIA = ?
+      `).run(div.CODPRODSUBST, div.QTDSUBST, div.NUNOTA, div.SEQUENCIA);
     }
     const prog = await db.prepare(
       "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
@@ -150,7 +158,18 @@ router.post("/:id/decidir", async (req, res) => {
     await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
       .run(perc, perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO", div.NUNOTA);
   }
-  res.json({ ok: true, status: novoStatus, substituido: acao === "APROVAR" });
+
+  // Corte REPROVADO: a falta volta para a tela de Faltas e Apanho como "corte negado",
+  // com as ações liberadas novamente (sem tratativa).
+  if (acao !== "APROVAR" && div.TIPODIVERG === "Corte") {
+    await db.prepare(`
+      UPDATE AD_FALTAITEM
+         SET ACAO = NULL, STATUS = 'PENDENTE', PRAZORETORNO = NULL,
+             OBSERVACAO = COALESCE(OBSERVACAO, '') || ' | [CORTE NEGADO pelo comercial em ' || datetime('now','localtime') || ']'
+       WHERE NUNOTA = ? AND SEQUENCIA = ? AND ACAO = 'CORTE'
+    `).run(div.NUNOTA, div.SEQUENCIA);
+  }
+  res.json({ ok: true, status: novoStatus, substituido: acao === "APROVAR" && !ehCorte });
 });
 
 /**
@@ -252,7 +271,7 @@ router.post("/:id/estornar", async (req, res) => {
   const id = Number(req.params.id);
 
   const div = await db.prepare(`
-    SELECT NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, QTDORIG, STATUS
+    SELECT NUNOTA, SEQUENCIA, CODPRODORIG, CODPRODSUBST, QTDORIG, STATUS, TIPODIVERG
     FROM AD_TROCAITEM WHERE NUTROCAITEM = ?
   `).get(id) as any;
   if (!div) {
@@ -278,6 +297,16 @@ router.post("/:id/estornar", async (req, res) => {
     const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
     await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
       .run(perc, perc === 0 ? "NAO_INICIADO" : (perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO"), div.NUNOTA);
+  }
+
+  // Estorno de CORTE aprovado: reabre a falta (volta para "aguardando definição de corte").
+  if (div.TIPODIVERG === "Corte" && div.STATUS === "APROVADO") {
+    await db.prepare(`
+      UPDATE AD_FALTAITEM
+         SET ACAO = 'CORTE', STATUS = 'EM_TRATAMENTO', DTRESOLUCAO = NULL,
+             OBSERVACAO = COALESCE(OBSERVACAO, '') || ' | [ESTORNO do corte aprovado em ' || datetime('now','localtime') || ']'
+       WHERE NUNOTA = ? AND SEQUENCIA = ?
+    `).run(div.NUNOTA, div.SEQUENCIA);
   }
 
   const fluxos = await db.prepare(`

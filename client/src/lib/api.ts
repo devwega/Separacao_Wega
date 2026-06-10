@@ -141,6 +141,9 @@ export type Falta = {
   acaoProposta: "apanho" | "compra" | "corte" | null;
   prazoRetorno: string | null;
   tempoRestante: string;
+  status?: string;
+  dtResolucao?: string | null;
+  corteStatus?: "PENDENTE" | "BLOQUEADO" | "APROVADO" | "REJEITADO" | null;
 };
 
 export type FluxoDistinto = {

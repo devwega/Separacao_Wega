@@ -68,13 +68,15 @@ const TRATATIVA_INFO: Record<string, { label: string; cls: string }> = {
   TROCA_REJEITADA:            { label: "Troca reprovada",              cls: "bg-red-100 text-red-700 border-red-200" },
   FALTA_AGUARDANDO_DEFINICAO: { label: "Aguardando definição (compras)", cls: "bg-orange-100 text-orange-800 border-orange-200" },
   EM_APANHO:                  { label: "Em apanho",                    cls: "bg-teal-100 text-teal-800 border-teal-200" },
-  COMPRA_PADRAO:              { label: "Compra padrão",                cls: "bg-blue-100 text-blue-800 border-blue-200" },
-  AGUARDANDO_CORTE_COMERCIAL: { label: "Aguardando corte (comercial)", cls: "bg-rose-100 text-rose-800 border-rose-200" },
+  COMPRA_PADRAO:              { label: "Aguardando compra padrão",     cls: "bg-blue-100 text-blue-800 border-blue-200" },
+  AGUARDANDO_CORTE_COMERCIAL: { label: "Aguardando definição de corte (comercial)", cls: "bg-rose-100 text-rose-800 border-rose-200" },
+  CORTE_APROVADO:             { label: "Produto cortado do pedido",    cls: "bg-rose-200 text-rose-900 border-rose-300" },
   FALTA_RESOLVIDA:            { label: "Falta resolvida",              cls: "bg-emerald-100 text-emerald-800 border-emerald-200" },
 };
 const TRATATIVA_BLOQUEIA = new Set([
   "EM_TRATATIVA_DIVERGENCIA", "DIVERGENCIA_ENCAMINHADA", "FLUXO_DISTINTO_PENDENTE",
   "FALTA_AGUARDANDO_DEFINICAO", "EM_APANHO", "COMPRA_PADRAO", "AGUARDANDO_CORTE_COMERCIAL",
+  "CORTE_APROVADO",
 ]);
 
 type ValidacaoResult = {
@@ -879,7 +881,8 @@ export default function BipeSeparacao() {
                     : situacao === "falta" ? "Confirmar — registrar Falta"
                     : "Confirmar Item"}
                 </Button>
-                {itemAtual?.status === "conforme" && (
+                {/* Corte aprovado: estorno só pela tela de Divergências/Trocas */}
+                {itemAtual?.status === "conforme" && tratativaAtual !== "CORTE_APROVADO" && (
                   <Button
                     variant="outline"
                     className="gap-2 h-11 border-slate-300 text-slate-700 hover:bg-slate-50"

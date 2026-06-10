@@ -14,7 +14,7 @@ import {
 import { toast } from "sonner";
 
 type Lote = { lote: string | null; validade: string | null; qtd: number };
-type Embarc = { nufaltaitem: number; nunota: number; embarcacao: string; parceiro: string; qtdFalta: number; qtdEncontrada: number; lotes: Lote[] };
+type Embarc = { nufaltaitem: number; nunota: number; embarcacao: string; parceiro: string; qtdFalta: number; qtdEncontrada: number; previsao?: string | null; lotes: Lote[] };
 type Grupo = { codprod: number; item: string; marca: string; qtdFaltaTotal: number; qtdEncontradaTotal: number; qtdPendenteTotal: number; embarcacoes: Embarc[] };
 type Sessao = { nusessao: number; comprador: string; mercado: string; lat: number | null; lng: number | null; dtInicio: string; dtAlterLoc: string; itens: { item: string; marca: string }[] };
 type Compradores = { sessoes: Sessao[]; naoEncontrados: { item: string; marca: string; embarcacao: string; qtdFalta: number }[] };
@@ -129,7 +129,14 @@ export default function ApanhoAcompanhamento() {
                   <div key={e.nufaltaitem} className="rounded-md border border-border p-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="flex items-center gap-1.5"><Ship className="w-3.5 h-3.5 text-muted-foreground" /> {e.embarcacao} <span className="text-xs text-muted-foreground">· {e.parceiro}</span></span>
-                      <span className="text-xs tabular-nums"><b>{e.qtdEncontrada}</b>/{e.qtdFalta} un</span>
+                      <span className="flex items-center gap-2">
+                        {e.previsao && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">
+                            Prev. retorno: {e.previsao}h
+                          </span>
+                        )}
+                        <span className="text-xs tabular-nums"><b>{e.qtdEncontrada}</b>/{e.qtdFalta} un</span>
+                      </span>
                     </div>
                     {e.lotes.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
