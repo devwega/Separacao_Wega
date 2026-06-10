@@ -103,6 +103,7 @@ async function runMigrations(): Promise<void> {
     "ALTER TABLE TGFBAR ADD COLUMN MARCA TEXT",
     "ALTER TABLE AD_TROCAITEM ADD COLUMN EANBIPADO TEXT",
     "ALTER TABLE AD_FLUXODISTINTO ADD COLUMN EANFISICO TEXT",
+    "ALTER TABLE AD_APANHO_SESSAO ADD COLUMN NFFOTO TEXT",
   ];
   for (const a of alters) {
     try { await c.execute(a); } catch { /* coluna ja existe */ }

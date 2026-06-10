@@ -14,7 +14,8 @@ import apanho from "./routes/apanho.js";
 
 export function createApiApp() {
   const app = express();
-  app.use(express.json());
+  // Limite maior para uploads em base64 (foto da NF/cupom do apanho).
+  app.use(express.json({ limit: "8mb" }));
 
   app.use((_req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");

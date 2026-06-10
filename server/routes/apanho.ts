@@ -52,6 +52,40 @@ router.get("/embarcacoes", async (_req, res) => {
   res.json(rows);
 });
 
+/**
+ * GET /api/apanho/sessoes-conferencia — conferência consolidada POR SESSÃO.
+ * Sessões com registros pendentes de conferência + itens de cada sessão
+ * (separados por embarcação no frontend). Registros sem sessão vêm em `avulsos`.
+ */
+router.get("/sessoes-conferencia", async (_req, res) => {
+  const db = getDb();
+  const sessoes = await db.prepare(`
+    SELECT S.NUSESSAO AS nusessao, S.COMPRADOR AS comprador, S.MERCADO AS mercado,
+           S.STATUS AS statusSessao, S.NFCHAVE AS nfChave, S.NFFOTO AS nfFoto,
+           S.DTINICIO AS dtInicio, S.DTFIM AS dtFim
+    FROM AD_APANHO_SESSAO S
+    WHERE EXISTS(SELECT 1 FROM AD_APANHO_REG R WHERE R.NUSESSAO=S.NUSESSAO AND R.CONFERIDO=0)
+    ORDER BY S.DTINICIO DESC
+  `).all() as any[];
+  const itensStmt = db.prepare(`
+    SELECT R.NUREG AS nureg, R.QTD AS qtd, R.LOTE AS lote, R.VALIDADE AS validade, R.DTREG AS dtReg,
+           F.NUFALTAITEM AS nufaltaitem, F.NUNOTA AS nunota, F.SEQUENCIA AS sequencia,
+           F.CODPROD AS codprod, F.QTDFALTA AS qtdFalta,
+           CAB.ORDEMCARGA AS embarcacao, CAB.NUNNOTA AS pedido, PAR.NOMEPARC AS parceiro,
+           P.DESCRPROD AS item, P.MARCA AS marca, P.REFERENCIA AS ean
+    FROM AD_APANHO_REG R
+    JOIN AD_FALTAITEM F ON R.NUFALTAITEM = F.NUFALTAITEM
+    JOIN TGFCAB CAB ON F.NUNOTA = CAB.NUNOTA
+    JOIN TGFPAR PAR ON CAB.CODPARC = PAR.CODPARC
+    JOIN TGFPRO P ON F.CODPROD = P.CODPROD
+    WHERE R.CONFERIDO = 0 AND R.NUSESSAO IS ?
+    ORDER BY CAB.ORDEMCARGA, P.DESCRPROD, R.NUREG
+  `);
+  for (const s of sessoes) s.itens = await itensStmt.all(s.nusessao);
+  const avulsos = await itensStmt.all(null);
+  res.json({ sessoes, avulsos });
+});
+
 /** GET /api/apanho/conferencia — itens com registros pendentes de conferência */
 router.get("/conferencia", async (_req, res) => {
   const rows = await getDb().prepare(
@@ -95,22 +129,54 @@ router.post("/:id/registrar", async (req, res) => {
   res.json({ ok: true });
 });
 
-/** POST /api/apanho/registro/:nureg/conferir  { lote?, validade? } — conferência na base */
+/**
+ * POST /api/apanho/registro/:nureg/conferir  { qtd?, lote?, validade?, substituir? }
+ * Conferência na base. Quando `substituir=true`, os valores informados na conferência
+ * SUBSTITUEM os digitados pelo comprador em campo. A conferência atualiza o item do
+ * pedido (TGFITE/AD_ITEMLOTE) — refletido na tela BIPE Separação como
+ * "Separado e conferido por apanho".
+ */
 router.post("/registro/:nureg/conferir", async (req, res) => {
   const db = getDb();
   const nureg = Number(req.params.nureg);
-  const { lote, validade } = (req.body ?? {}) as any;
-  const reg = await db.prepare("SELECT NUFALTAITEM FROM AD_APANHO_REG WHERE NUREG=?").get(nureg) as any;
+  const { qtd, lote, validade, substituir } = (req.body ?? {}) as any;
+  const reg = await db.prepare(
+    "SELECT NUFALTAITEM, QTD, LOTE, VALIDADE, CONFERIDO FROM AD_APANHO_REG WHERE NUREG=?",
+  ).get(nureg) as any;
   if (!reg) { res.status(404).json({ error: "Registro não encontrado" }); return; }
+  if (reg.CONFERIDO) { res.status(409).json({ error: "Registro já conferido" }); return; }
   const u = (req as any).user;
-  await db.prepare(
-    "UPDATE AD_APANHO_REG SET CONFERIDO=1, LOTE=COALESCE(?,LOTE), VALIDADE=COALESCE(?,VALIDADE), DTCONF=datetime('now','localtime'), CODUSUCONF=? WHERE NUREG=?",
-  ).run(lote || null, validade || null, u?.codusu ?? null, nureg);
+
+  // substituir=true: valores da conferência sobrescrevem o registro do comprador
+  const qtdFinal = substituir && Number(qtd) > 0 ? Number(qtd) : Number(reg.QTD);
+  const loteFinal = substituir ? (lote || null) : (reg.LOTE ?? lote ?? null);
+  const valFinal = substituir ? (validade || null) : (reg.VALIDADE ?? validade ?? null);
+
+  await db.prepare(`
+    UPDATE AD_APANHO_REG
+       SET CONFERIDO=1, QTD=?, LOTE=?, VALIDADE=?,
+           DTCONF=datetime('now','localtime'), CODUSUCONF=?
+     WHERE NUREG=?
+  `).run(qtdFinal, loteFinal, valFinal, u?.codusu ?? null, nureg);
+
   const f = await db.prepare(`
-    SELECT F.QTDFALTA AS qtdFalta,
+    SELECT F.NUNOTA, F.SEQUENCIA, F.QTDFALTA AS qtdFalta,
            (SELECT SUM(QTD) FROM AD_APANHO_REG R WHERE R.NUFALTAITEM=F.NUFALTAITEM AND R.CONFERIDO=1) AS conf
     FROM AD_FALTAITEM F WHERE F.NUFALTAITEM=?
   `).get(reg.NUFALTAITEM) as any;
+
+  // Atualiza o item do pedido (campos visíveis no BIPE): quantidade conferida, lote e
+  // o detalhamento por lote em AD_ITEMLOTE.
+  await db.prepare(
+    "INSERT INTO AD_ITEMLOTE (NUNOTA, SEQUENCIA, LOTE, VALIDADE, QTD) VALUES (?, ?, ?, ?, ?)",
+  ).run(f.NUNOTA, f.SEQUENCIA, loteFinal, valFinal, qtdFinal);
+  await db.prepare(`
+    UPDATE TGFITE
+       SET QTDENTREGUE = QTDENTREGUE + ?, QTDCONFERIDA = QTDCONFERIDA + ?,
+           CONTROLE = COALESCE(NULLIF(?, ''), CONTROLE), STATUSLOTE='P'
+     WHERE NUNOTA = ? AND SEQUENCIA = ?
+  `).run(qtdFinal, qtdFinal, loteFinal, f.NUNOTA, f.SEQUENCIA);
+
   let faltaBaixada = false;
   if (f && Number(f.conf) >= Number(f.qtdFalta)) {
     // Apanho concluído: marca o horário da conferência (DTRESOLUCAO) — o item sai da
@@ -118,9 +184,16 @@ router.post("/registro/:nureg/conferir", async (req, res) => {
     await db.prepare(
       "UPDATE AD_FALTAITEM SET STATUS='RESOLVIDO', DTRESOLUCAO=datetime('now','localtime') WHERE NUFALTAITEM=?",
     ).run(reg.NUFALTAITEM);
+    await db.prepare("UPDATE TGFITE SET PENDENTE='N' WHERE NUNOTA=? AND SEQUENCIA=?").run(f.NUNOTA, f.SEQUENCIA);
+    const prog = await db.prepare(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN PENDENTE='N' THEN 1 ELSE 0 END) AS conformes FROM TGFITE WHERE NUNOTA=?",
+    ).get(f.NUNOTA) as any;
+    const perc = prog.total ? Math.round((prog.conformes / prog.total) * 100) : 0;
+    await db.prepare("UPDATE TGFCAB SET AD_PERCPROGRESSO=?, AD_STATUSSEP=? WHERE NUNOTA=?")
+      .run(perc, perc === 100 ? "CONCLUIDO" : "EM_ANDAMENTO", f.NUNOTA);
     faltaBaixada = true;
   }
-  res.json({ ok: true, faltaBaixada });
+  res.json({ ok: true, faltaBaixada, substituido: !!substituir });
 });
 
 /** GET /api/apanho/resumo — totais para a tela inicial (Secao 5.2) */
@@ -146,7 +219,8 @@ router.get("/agrupado", async (req, res) => {
     GROUP BY P.CODPROD ORDER BY P.DESCRPROD
   `).all() as any[];
   const brkStmt = db.prepare(`
-    SELECT F.NUFALTAITEM AS nufaltaitem, F.NUNOTA AS nunota, CAB.ORDEMCARGA AS embarcacao,
+    SELECT F.NUFALTAITEM AS nufaltaitem, F.NUNOTA AS nunota, F.SEQUENCIA AS sequencia,
+           CAB.ORDEMCARGA AS embarcacao,
            PAR.NOMEPARC AS parceiro, F.QTDFALTA AS qtdFalta,
            substr(F.PRAZORETORNO, 12, 5) AS previsao,
            COALESCE((SELECT SUM(QTD) FROM AD_APANHO_REG R WHERE R.NUFALTAITEM=F.NUFALTAITEM),0) AS qtdEncontrada
@@ -194,16 +268,18 @@ router.post("/sessao/:id/local", async (req, res) => {
   res.json({ ok: r.changes > 0 });
 });
 
-/** POST /api/apanho/sessao/:id/finalizar { nfChave } — exige NF cobrindo a sessao (5.3) */
+/** POST /api/apanho/sessao/:id/finalizar { nfChave, nfFoto? } — exige NF cobrindo a sessao (5.3) */
 router.post("/sessao/:id/finalizar", async (req, res) => {
   const db = getDb();
   const id = Number(req.params.id);
-  const { nfChave } = (req.body ?? {}) as any;
+  const { nfChave, nfFoto } = (req.body ?? {}) as any;
   if (!nfChave || String(nfChave).trim().length < 3) { res.status(400).json({ error: "Informe a NF/cupom fiscal da sessao" }); return; }
   const ses = await db.prepare("SELECT 1 FROM AD_APANHO_SESSAO WHERE NUSESSAO=? AND STATUS='ABERTA'").get(id);
   if (!ses) { res.status(404).json({ error: "Sessao aberta nao encontrada" }); return; }
-  await db.prepare("UPDATE AD_APANHO_REG SET NFCHAVE=COALESCE(NFCHAVE,?) WHERE NUSESSAO=?").run(String(nfChave).trim(), id);
-  await db.prepare("UPDATE AD_APANHO_SESSAO SET STATUS='FINALIZADA', NFCHAVE=?, DTFIM=datetime('now','localtime') WHERE NUSESSAO=?").run(String(nfChave).trim(), id);
+  await db.prepare("UPDATE AD_APANHO_REG SET NFCHAVE=COALESCE(NFCHAVE,?), NFFOTO=COALESCE(NFFOTO,?) WHERE NUSESSAO=?")
+    .run(String(nfChave).trim(), nfFoto || null, id);
+  await db.prepare("UPDATE AD_APANHO_SESSAO SET STATUS='FINALIZADA', NFCHAVE=?, NFFOTO=?, DTFIM=datetime('now','localtime') WHERE NUSESSAO=?")
+    .run(String(nfChave).trim(), nfFoto || null, id);
   res.json({ ok: true });
 });
 

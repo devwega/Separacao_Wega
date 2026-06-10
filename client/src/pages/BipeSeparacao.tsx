@@ -71,6 +71,7 @@ const TRATATIVA_INFO: Record<string, { label: string; cls: string }> = {
   COMPRA_PADRAO:              { label: "Aguardando compra padrão",     cls: "bg-blue-100 text-blue-800 border-blue-200" },
   AGUARDANDO_CORTE_COMERCIAL: { label: "Aguardando definição de corte (comercial)", cls: "bg-rose-100 text-rose-800 border-rose-200" },
   CORTE_APROVADO:             { label: "Produto cortado do pedido",    cls: "bg-rose-200 text-rose-900 border-rose-300" },
+  APANHO_CONFERIDO:           { label: "Separado e conferido por apanho", cls: "bg-emerald-100 text-emerald-800 border-emerald-200" },
   FALTA_RESOLVIDA:            { label: "Falta resolvida",              cls: "bg-emerald-100 text-emerald-800 border-emerald-200" },
 };
 const TRATATIVA_BLOQUEIA = new Set([

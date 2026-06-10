@@ -15,17 +15,41 @@ import {
 } from "@/components/ui/dialog";
 import {
   ShoppingCart, Loader2, Check, Ship, MapPin, Plus, XCircle, Lock, User, Store, Flag,
-  ChevronDown, ChevronRight, Package, AlertTriangle,
+  ChevronDown, ChevronRight, Package, AlertTriangle, ScanBarcode, Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type Embarc = { nufaltaitem: number; nunota: number; embarcacao: string; parceiro: string; qtdFalta: number; qtdEncontrada: number };
+type Embarc = { nufaltaitem: number; nunota: number; sequencia: number; embarcacao: string; parceiro: string; qtdFalta: number; qtdEncontrada: number };
 type Grupo = { codprod: number; item: string; marca: string; qtdFaltaTotal: number; qtdEncontradaTotal: number; qtdPendenteTotal: number; embarcacoes: Embarc[] };
 type Sessao = { nusessao: number; comprador: string; mercado: string };
 type LoteRow = { lote: string; validade: string; qtd: string };
+type Validacao = {
+  ok: boolean; match?: string; motivo?: string;
+  flags?: { eanOk: boolean; marcaOk?: boolean; loteOk: boolean; validadeOk: boolean; equivalenciaOk: boolean; shelfLifeOk: boolean };
+};
 
 const SESSAO_KEY = "apanho_sessao";
+
+/** Reduz a foto para no máx. 1280px (JPEG) antes do upload em base64. */
+function fotoParaDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 1280;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.72));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Não foi possível ler a imagem")); };
+    img.src = url;
+  });
+}
 
 function getGeo(): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
@@ -59,7 +83,10 @@ export default function ApanhoMobile() {
   const [starting, setStarting] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [nfChave, setNfChave] = useState("");
+  const [nfFoto, setNfFoto] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
+  // Bipagem/validação de EAN por item-embarcação (mesmas validações do BIPE Separação)
+  const [eans, setEans] = useState<Record<number, { ean: string; validacao: Validacao | null; validando: boolean }>>({});
 
   const refreshGeo = useCallback(async () => { setGeo(await getGeo()); setGeoChecked(true); }, []);
   useEffect(() => { refreshGeo(); }, [refreshGeo]);
@@ -110,8 +137,8 @@ export default function ApanhoMobile() {
     if (!nfChave.trim()) { toast.error("Informe a NF/cupom fiscal da sessão."); return; }
     setEnding(true);
     try {
-      await api.post(`/apanho/sessao/${sessao.nusessao}/finalizar`, { nfChave: nfChave.trim() });
-      persistSessao(null); setEndOpen(false); setNfChave(""); setGrupos([]);
+      await api.post(`/apanho/sessao/${sessao.nusessao}/finalizar`, { nfChave: nfChave.trim(), nfFoto });
+      persistSessao(null); setEndOpen(false); setNfChave(""); setNfFoto(null); setGrupos([]);
       api.get("/apanho/resumo").then(({ data }) => setResumo(data)).catch(() => {});
       toast.success("Sessão finalizada");
     } catch (e) { toast.error(extractErrorMessage(e, "Falha ao finalizar")); }
@@ -120,8 +147,32 @@ export default function ApanhoMobile() {
 
   const getRows = (nf: number): LoteRow[] => forms[nf] ?? [{ lote: "", validade: "", qtd: "" }];
   const setRows = (nf: number, rows: LoteRow[]) => setForms((f) => ({ ...f, [nf]: rows }));
+  const getEan = (nf: number) => eans[nf] ?? { ean: "", validacao: null, validando: false };
+  const setEan = (nf: number, v: Partial<{ ean: string; validacao: Validacao | null; validando: boolean }>) =>
+    setEans((p) => ({ ...p, [nf]: { ...getEan(nf), ...v } }));
+
+  // Mesmas validações do BIPE Separação (EAN, lote, validade, equivalência) via /bipagem/validar-ean
+  const validarEan = async (e: Embarc) => {
+    const st = getEan(e.nufaltaitem);
+    if (!st.ean.trim()) { toast.error("Bipe ou digite o EAN."); return; }
+    const r0 = getRows(e.nufaltaitem)[0];
+    setEan(e.nufaltaitem, { validando: true });
+    try {
+      const { data } = await api.post<Validacao>("/bipagem/validar-ean", {
+        nunota: e.nunota, sequencia: e.sequencia, ean: st.ean.trim(),
+        lote: r0?.lote, validade: r0?.validade,
+      });
+      setEan(e.nufaltaitem, { validacao: data, validando: false });
+    } catch (err) {
+      setEan(e.nufaltaitem, { validando: false });
+      toast.error(extractErrorMessage(err, "Erro ao validar EAN"));
+    }
+  };
 
   const registrarEmbarc = async (e: Embarc) => {
+    const st = getEan(e.nufaltaitem);
+    if (!st.validacao) { toast.error("Bipe e valide o EAN do item antes de registrar."); return; }
+    if (!st.validacao.ok) { toast.error("Resolva os erros de validação antes de registrar."); return; }
     const rows = getRows(e.nufaltaitem).filter((r) => Number(r.qtd) > 0);
     if (rows.length === 0) { toast.error("Informe ao menos uma quantidade."); return; }
     setSavingFalta(e.nufaltaitem);
@@ -135,6 +186,7 @@ export default function ApanhoMobile() {
       }
       toast.success(`Apanho registrado p/ ${e.embarcacao}`);
       setForms((f) => ({ ...f, [e.nufaltaitem]: [{ lote: "", validade: "", qtd: "" }] }));
+      setEan(e.nufaltaitem, { ean: "", validacao: null });
       carregarGrupos();
     } catch (err) { toast.error(extractErrorMessage(err, "Erro ao registrar")); }
     finally { setSavingFalta(null); }
@@ -270,6 +322,43 @@ export default function ApanhoMobile() {
                   </button>
                   {aberto && (
                     <div className="mt-2 space-y-2 pl-5">
+                      {/* Bipe/EAN com as mesmas validações do BIPE Separação */}
+                      <div className="relative">
+                        <Input
+                          placeholder="Bipe ou digite o EAN e pressione Enter"
+                          className="h-10 text-sm font-mono pr-9 border-2 border-primary/30 focus:border-primary"
+                          value={getEan(e.nufaltaitem).ean}
+                          onChange={(ev) => setEan(e.nufaltaitem, { ean: ev.target.value, validacao: null })}
+                          onKeyDown={(ev) => { if (ev.key === "Enter") validarEan(e); }}
+                        />
+                        <ScanBarcode className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      </div>
+                      {getEan(e.nufaltaitem).validacao && (() => {
+                        const v = getEan(e.nufaltaitem).validacao!;
+                        return (
+                          <div className="space-y-1.5">
+                            <div className={cn("text-xs px-2.5 py-1.5 rounded-md border",
+                              v.ok ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200")}>
+                              {v.ok ? `✓ EAN válido (match: ${v.match})` : `✗ ${v.motivo}`}
+                            </div>
+                            <div className="grid grid-cols-4 gap-1">
+                              {[
+                                { label: "EAN", flag: v.flags?.eanOk && v.flags?.marcaOk !== false },
+                                { label: "Lote", flag: v.flags?.loteOk },
+                                { label: "Validade", flag: v.flags?.validadeOk && v.flags?.shelfLifeOk },
+                                { label: "Equiv.", flag: v.flags?.equivalenciaOk },
+                              ].map((fz) => (
+                                <span key={fz.label} className={cn("text-[10px] px-1.5 py-0.5 rounded border text-center",
+                                  fz.flag === undefined ? "bg-muted text-muted-foreground border-border"
+                                    : fz.flag ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-red-50 text-red-700 border-red-200")}>
+                                  {fz.flag === false ? "✗" : "✓"} {fz.label}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {rows.map((r, idx) => (
                         <div key={idx} className="grid grid-cols-12 gap-2 items-center">
                           <Input className="col-span-4 h-9 text-sm" placeholder="Lote" value={r.lote}
@@ -315,9 +404,27 @@ export default function ApanhoMobile() {
               Informe a NF/cupom fiscal que contém todos os itens comprados nesta sessão.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label className="text-xs flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Chave da NF / nº do cupom</Label>
-            <Input value={nfChave} onChange={(e) => setNfChave(e.target.value)} placeholder="NF/cupom da sessão" className="h-9" />
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Chave da NF / nº do cupom</Label>
+              <Input value={nfChave} onChange={(e) => setNfChave(e.target.value)} placeholder="NF/cupom da sessão" className="h-9" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1"><Camera className="w-3 h-3" /> Foto da NF / cupom fiscal</Label>
+              <Input type="file" accept="image/*" capture="environment" className="h-9 text-xs"
+                onChange={async (ev) => {
+                  const file = ev.target.files?.[0];
+                  if (!file) { setNfFoto(null); return; }
+                  try { setNfFoto(await fotoParaDataUrl(file)); }
+                  catch { toast.error("Não foi possível processar a foto."); setNfFoto(null); }
+                }} />
+              {nfFoto && (
+                <div className="flex items-center gap-2">
+                  <img src={nfFoto} alt="NF" className="h-20 rounded-md border border-border" />
+                  <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => setNfFoto(null)}>remover</button>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEndOpen(false)}>Cancelar</Button>
