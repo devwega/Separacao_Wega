@@ -20,6 +20,7 @@ import ValidadeMinima from "./pages/ValidadeMinima";
 import ApanhoMobile from "./pages/ApanhoMobile";
 import ApanhoAcompanhamento from "./pages/ApanhoAcompanhamento";
 import ApanhoConferencia from "./pages/ApanhoConferencia";
+import Configuracoes from "./pages/Configuracoes";
 
 function Router() {
   return (
@@ -44,6 +45,7 @@ function Router() {
               <Route path="/apanho-mobile" component={ApanhoMobile} />
               <Route path="/apanho-acompanhamento" component={ApanhoAcompanhamento} />
               <Route path="/apanho-conferencia" component={ApanhoConferencia} />
+              <Route path="/configuracoes" component={Configuracoes} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />
             </Switch>

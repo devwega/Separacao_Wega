@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import {
   Package, ScanBarcode, ArrowLeftRight, AlertTriangle, ShieldCheck,
   FileCheck, History, ChevronLeft, ChevronRight, Users, LogOut, CalendarClock, ShoppingCart, Activity, ClipboardCheck,
+  Settings,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
@@ -37,6 +38,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (user && (user.perfil === "ADMINISTRADOR" || user.perfil === "GERENCIA")) {
     items.push({ path: "/validade-minima", label: "Validade Mínima", icon: CalendarClock });
     items.push({ path: "/usuarios", label: "Usuários", icon: Users });
+  }
+  // Configurações de conexão de APIs — somente ADMINISTRADOR
+  if (user?.perfil === "ADMINISTRADOR") {
+    items.push({ path: "/configuracoes", label: "Configurações", icon: Settings });
   }
   const currentNav = items.find((i) => i.path === location) || items[0];
 
